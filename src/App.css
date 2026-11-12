@@ -61,6 +61,13 @@ header {
   font-weight: 700;
 }
 
+.user-badge button {
+  color: var(--yellow);
+  font-size: 11px;
+  text-decoration: underline;
+  padding: 0 2px;
+}
+
 .shop {
   margin-top: 14px;
   background: rgba(255, 255, 255, 0.14);
@@ -337,6 +344,7 @@ h2 {
   margin-right: 5px;
 }
 
+/* --- NAVIGATION BASIQUE (MOBILE) --- */
 nav {
   position: fixed;
   left: 0;
@@ -357,7 +365,7 @@ nav button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   font-size: 11px;
   font-weight: 600;
   color: var(--mute);
@@ -366,29 +374,46 @@ nav button {
 
 nav button[aria-current="page"] {
   color: var(--blue);
+  font-weight: 700;
+}
+
+nav svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 nav .sell em {
-  width: 54px;
-  height: 54px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
   background: var(--yellow);
   display: grid;
   place-items: center;
-  font-size: 24px;
-  margin-top: -26px;
+  margin-top: -24px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   color: #111;
 }
 
+nav .sell em svg {
+  width: 24px;
+  height: 24px;
+  stroke: #111;
+}
+
 .fld {
   width: 100%;
-  padding: 12px 14px;
+  padding: 11px 13px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--bg);
   color: var(--ink);
   font: inherit;
+  font-size: 14px;
 }
 
 .cta {
@@ -396,15 +421,129 @@ nav .sell em {
   background: var(--yellow);
   color: #111;
   font-weight: 800;
-  font-size: 16px;
-  padding: 15px;
-  border-radius: 16px;
-  margin-top: 12px;
+  font-size: 15px;
+  padding: 13px;
+  border-radius: 14px;
+  margin-top: 10px;
 }
 
 .cta:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.qb {
+  background: var(--yellow);
+  color: #111;
+  font-weight: 800;
+  border-radius: 10px;
+  padding: 7px 11px;
+  font-size: 13px;
+}
+
+.pg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.pb {
+  text-align: left;
+  background: var(--bg);
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 2px solid transparent;
+}
+
+.pb b {
+  font-size: 14px;
+}
+
+.pb span {
+  font-size: 12px;
+  color: var(--mute);
+}
+
+.pb:hover {
+  border-color: var(--blue);
+}
+
+.pb:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ln {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.qty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.qty button {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--bg);
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.qty button.pl {
+  background: var(--blue);
+  color: #fff;
+}
+
+.tr {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  color: var(--mute);
+  font-size: 14px;
+}
+
+.tr.t {
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.fl {
+  display: block;
+  font-size: 13px;
+  color: var(--mute);
+  margin: 10px 0 5px;
+}
+
+.pm {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.pm button {
+  padding: 10px 4px;
+  border-radius: 12px;
+  border: 2px solid var(--line);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.pm button[aria-pressed="true"] {
+  border-color: var(--blue);
+  background: var(--bg);
+  color: var(--blue);
 }
 
 .ov {
@@ -422,6 +561,18 @@ nav .sell em {
   width: 100%;
   text-align: center;
   margin: 0;
+}
+
+.chk {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--okbg);
+  color: var(--ok);
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+  margin: 0 auto 10px;
 }
 
 .toast {
@@ -446,15 +597,20 @@ nav .sell em {
   opacity: 1;
 }
 
+/* ========================================================
+   ADAPTATION ÉCRAN GRAND / DESKTOP (SIDEBAR LATÉRALE PRO)
+   ======================================================== */
 @media (min-width: 900px) {
   .app {
     max-width: none;
-    padding: 0 0 32px 240px;
+    padding: 0 0 32px 250px; /* Espace pour la barre de gauche */
   }
+
   header {
     border-radius: 0 0 32px 32px;
     padding: 22px max(32px, calc((100% - 1200px) / 2)) 84px;
   }
+
   main {
     display: grid;
     grid-template-columns: repeat(12, 1fr);
@@ -462,44 +618,123 @@ nav .sell em {
     margin-top: -56px;
     padding: 0 max(32px, calc((100% - 1200px) / 2));
   }
+
   .grid2 {
     display: contents;
   }
+
   .grid2 .kpi,
   main > .short {
     grid-column: span 4;
   }
+
   main > .alert {
     grid-column: 1 / -1;
     order: 1;
   }
+
   main > :nth-child(3) {
     grid-column: span 8;
     order: 2;
   }
+
   main > :nth-child(5) {
     grid-column: span 4;
     order: 2;
   }
+
   main > :nth-child(n + 6) {
     grid-column: span 6;
     order: 3;
   }
+
+  /* BARRE LATÉRALE PRO */
   nav {
     top: 0;
     bottom: 0;
     left: 0;
     right: auto;
-    width: 240px;
+    width: 250px;
     max-width: none;
     margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
     border-radius: 0;
     border-top: 0;
     border-right: 1px solid var(--line);
-    padding: 22px 14px;
+    padding: 24px 14px;
+    background: var(--card);
+  }
+
+  nav::before {
+    content: "▲  StockPilot";
+    font-weight: 800;
+    font-size: 20px;
+    color: var(--blue);
+    padding: 6px 14px 24px;
+    display: block;
+  }
+
+  :root[data-theme="dark"] nav::before {
+    color: #34d399;
+  }
+
+  nav button {
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    width: 100%;
+    color: var(--mute);
+    transition: background 0.15s, color 0.15s;
+  }
+
+  nav button:hover {
+    background: var(--bg);
+    color: var(--ink);
+  }
+
+  nav button[aria-current="page"] {
+    background: var(--bg);
+    color: var(--blue);
+    font-weight: 800;
+  }
+
+  /* BOUTON VENTE DANS LA SIDEBAR DESKTOP */
+  nav .sell {
+    order: -1;
+    background: var(--yellow);
+    color: #111 !important;
+    font-weight: 800;
+    justify-content: flex-start;
+    margin-bottom: 12px;
+    border-radius: 14px;
+  }
+
+  nav .sell:hover {
+    background: var(--yellow);
+    filter: brightness(0.96);
+  }
+
+  nav .sell em {
+    width: auto;
+    height: auto;
+    background: none;
+    box-shadow: none;
+    margin: 0;
+    display: flex;
+  }
+
+  nav .sell em svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .toast {
+    bottom: 32px;
   }
 }
-
