@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockPilot - Maquette Officielle (Cahier des Charges)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body {
+      background-color: #EEF2FC;
+      color: #17213D;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased pb-24 lg:pb-0">
+
+  <!-- En-tête Bleu Électrique Officiel -->
+  <header class="bg-[#1717F5] text-white sticky top-0 z-40 shadow-md">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <button onclick="showTab('dashboard')" class="flex items-center gap-3 text-left hover:opacity-90 transition active:scale-95 focus:outline-none cursor-pointer" title="Retour à l'accueil">
+        <div class="w-10 h-10 rounded-xl bg-white text-[#1717F5] flex items-center justify-center font-black text-xl shadow-sm">
+          SP
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-extrabold text-xl tracking-tight text-white">StockPilot</span>
+          </div>
+          <p class="text-[11px] text-blue-200 hidden sm:block">ETS Sainte-Marie • Lomé</p>
+        </div>
+      </button>
+
+      <!-- Navigation Desktop -->
+      <nav class="hidden lg:flex items-center gap-1 bg-white/10 p-1 rounded-xl">
+        <button onclick="showTab('dashboard')" id="d-btn-dashboard" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition bg-white text-[#1717F5]">
+          Accueil
+        </button>
+        <button onclick="showTab('pos')" id="d-btn-pos" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition text-white hover:bg-white/10">
+          Nouvelle Vente
+        </button>
+        <button onclick="showTab('products')" id="d-btn-products" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition text-white hover:bg-white/10">
+          Prix & Stocks
+        </button>
+        <button onclick="showTab('invoices')" id="d-btn-invoices" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition text-white hover:bg-white/10">
+          Facturation PDF
+        </button>
+        <button onclick="showTab('subscription')" id="d-btn-subscription" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition text-white hover:bg-white/10">
+          Abonnement
+        </button>
+      </nav>
+
+      <div class="flex items-center gap-2.5">
+        <div class="text-right">
+          <p class="text-xs font-black text-white flex items-center justify-end gap-1">
+            <span id="user-greeting">Bonjour Simon</span>
+            <span class="text-xs">👋</span>
+          </p>
+          <p class="text-[10px] text-blue-200 font-medium hidden sm:block">
+            Administrateur
+          </p>
+        </div>
+        <div class="w-9 h-9 rounded-full bg-white text-[#1717F5] font-black flex items-center justify-center text-sm shadow-sm ring-2 ring-white/30">
+          S
+        </div>
+      </div>
+    </div>
+
+    <!-- Sous-bandeau d'accueil : Phrase de concentration du jour -->
+    <div class="bg-blue-950/40 backdrop-blur-sm border-t border-white/10 px-4 py-2">
+      <div class="max-w-7xl mx-auto flex items-center justify-between gap-3 text-blue-100 text-xs">
+        <div class="flex items-center gap-2 overflow-hidden">
+          <span class="shrink-0 flex items-center gap-1 font-bold text-white text-[11px] uppercase tracking-wider">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-blue-200"></i> Focus :
+          </span>
+          <span id="focus-quote" class="font-medium italic truncate text-blue-100 text-xs">
+            « Chaque vente compte. Restez concentré sur vos objectifs du jour. »
+          </span>
+        </div>
+        <span class="shrink-0 text-[10px] bg-white/10 px-2 py-0.5 rounded text-blue-200 font-mono hidden sm:inline">
+          Session active
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-7xl mx-auto w-full p-4 lg:p-6 space-y-6">
+
+    <!-- 1. TABLEAU DE BORD -->
+    <div id="view-dashboard" class="space-y-6">
+      
+      <!-- En-tête type maquette smartphone (Page 1) -->
+      <div class="bg-gradient-to-r from-[#1717F5] to-blue-800 text-white rounded-2xl p-5 lg:p-6 shadow-md space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <div class="w-5 h-5 rounded-md bg-white text-[#1717F5] flex items-center justify-center text-[10px] shadow-sm">
+                <i data-lucide="store" class="w-3.5 h-3.5"></i>
+              </div>
+              <span class="text-xs font-bold uppercase tracking-wider text-blue-200">
+                Ventes du jour • ETS Sainte-Marie
+              </span>
+            </div>
+            <h1 class="text-3xl lg:text-4xl font-black mt-1">184 500 FCFA</h1>
+          </div>
+          <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-white/15 text-white border border-white/20 self-start sm:self-auto">
+            +14% vs hier
+          </span>
+        </div>
+
+        <!-- 4 Raccourcis (Vente / Entrée / Scanner / Inventaire) -->
+        <div class="grid grid-cols-4 gap-2 pt-2 border-t border-white/15">
+          <button onclick="showTab('pos')" class="bg-white/10 hover:bg-white/20 p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 transition text-center">
+            <div class="w-8 h-8 rounded-full bg-[#FFD400] text-[#17213D] flex items-center justify-center font-bold">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+            </div>
+            <span class="text-[11px] font-bold">Vente</span>
+          </button>
+          <button onclick="showTab('products')" class="bg-white/10 hover:bg-white/20 p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 transition text-center">
+            <div class="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center font-bold">
+              <i data-lucide="arrow-down-left" class="w-4 h-4"></i>
+            </div>
+            <span class="text-[11px] font-bold">Entrée</span>
+          </button>
+          <button onclick="showTab('pos')" class="bg-white/10 hover:bg-white/20 p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 transition text-center">
+            <div class="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center font-bold">
+              <i data-lucide="scan" class="w-4 h-4"></i>
+            </div>
+            <span class="text-[11px] font-bold">Scanner</span>
+          </button>
+          <button onclick="showTab('products')" class="bg-white/10 hover:bg-white/20 p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 transition text-center">
+            <div class="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center font-bold">
+              <i data-lucide="package" class="w-4 h-4"></i>
+            </div>
+            <span class="text-[11px] font-bold">Inventaire</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Métriques secondaires -->
+      <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
+          <span class="text-xs font-bold text-[#667085] block">Bénéfice estimé</span>
+          <p className="text-xl font-black text-emerald-600 mt-1">44 200 FCFA</p>
+          <span className="text-[11px] text-[#667085] mt-0.5 block">Marge : 24%</span>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
+          <span class="text-xs font-bold text-[#667085] block">Valeur du stock</span>
+          <p className="text-xl font-black text-[#17213D] mt-1">3 275 000 FCFA</p>
+          <span className="text-[11px] text-[#667085] mt-0.5 block">1 240 unités</span>
+        </div>
+        <div class="col-span-2 lg:col-span-1 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+          <div>
+            <span class="text-xs font-bold text-[#667085] block">Créances impayées</span>
+            <p className="text-xl font-black text-red-600 mt-1">188 000 FCFA</p>
+          </div>
+          <button onclick="showTab('invoices')" class="px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs font-bold">
+            Voir
+          </button>
+        </div>
+      </div>
+
+      <!-- Graphique 7 jours -->
+      <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+          <h3 class="text-sm font-bold text-[#17213D]">Évolution des Ventes (7 jours)</h3>
+          <span class="text-xs font-bold text-[#1717F5]">Total : 1 245 000 FCFA</span>
+        </div>
+        <div class="h-28 flex items-end justify-between gap-2 pt-2">
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-blue-200 h-16 rounded-t-lg"></div><span class="text-[11px] font-bold">Lun</span></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-blue-200 h-20 rounded-t-lg"></div><span class="text-[11px] font-bold">Mar</span></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-blue-200 h-12 rounded-t-lg"></div><span class="text-[11px] font-bold">Mer</span></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-blue-200 h-22 rounded-t-lg"></div><span class="text-[11px] font-bold">Jeu</span></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-blue-200 h-20 rounded-t-lg"></div><span class="text-[11px] font-bold">Ven</span></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-[#1717F5] h-24 rounded-t-lg"></div><span class="text-[11px] font-bold text-[#1717F5]">Sam</span></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-blue-200 h-18 rounded-t-lg"></div><span class="text-[11px] font-bold">Dim</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. NOUVELLE VENTE (POS) -->
+    <div id="view-pos" class="space-y-4 hidden">
+      <div class="bg-[#1717F5] text-white p-5 rounded-2xl shadow-sm flex items-center justify-between">
+        <div>
+          <span class="text-xs font-bold text-blue-200 uppercase">Montant à Encaisser</span>
+          <h2 class="text-3xl font-black">59 500 FCFA</h2>
+        </div>
+        <button onclick="alert('Vente de 59 500 FCFA validée avec succès !')" class="px-5 py-3 rounded-xl bg-[#FFD400] text-[#17213D] font-black text-sm shadow-md hover:bg-amber-400 transition">
+          Encaisser
+        </button>
+      </div>
+
+      <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
+        <h3 class="text-sm font-bold text-[#17213D]">Articles au Panier (3)</h3>
+        <div class="divide-y divide-slate-100 text-xs">
+          <div class="py-2.5 flex items-center justify-between">
+            <div>
+              <p class="font-bold">Riz Parfumé 25kg (x2)</p>
+              <span class="text-[#667085]">20 000 FCFA / sac</span>
+            </div>
+            <span class="font-black text-sm text-[#1717F5]">40 000 FCFA</span>
+          </div>
+          <div class="py-2.5 flex items-center justify-between">
+            <div>
+              <p class="font-bold">Huile de Table Dinor 5L (x3)</p>
+              <span class="text-[#667085]">6 500 FCFA / bidon</span>
+            </div>
+            <span class="font-black text-sm text-[#1717F5]">19 500 FCFA</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm space-y-2">
+        <span class="text-xs font-bold text-[#17213D] block">Moyen de Règlement PayGate / Comptoir</span>
+        <div class="grid grid-cols-3 gap-2 text-xs font-bold">
+          <div class="p-2.5 rounded-xl border border-[#1717F5] bg-blue-50 text-[#1717F5] text-center">Flooz</div>
+          <div class="p-2.5 rounded-xl border border-slate-200 text-center">T-Money</div>
+          <div class="p-2.5 rounded-xl border border-slate-200 text-center">Espèces</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. PRIX DES PRODUITS -->
+    <div id="view-products" class="space-y-4 hidden">
+      <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-black text-[#1717F5]">Prix des Produits & Marges</h2>
+          <p class="text-xs text-[#667085]">Catalogue officiel avec historisation tarifaire.</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead class="bg-slate-50 text-[#667085] font-bold border-b border-slate-200">
+            <tr>
+              <th class="p-3">Produit</th>
+              <th class="p-3 text-center">Marge</th>
+              <th class="p-3 text-center">Stock</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <tr>
+              <td class="p-3 font-bold">Riz Parfumé 25kg</td>
+              <td class="p-3 text-center text-emerald-700 font-bold">+18%</td>
+              <td class="p-3 text-center"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">45 sacs</span></td>
+            </tr>
+            <tr>
+              <td class="p-3 font-bold">Huile Dinor 5L</td>
+              <td class="p-3 text-center text-emerald-700 font-bold">+20%</td>
+              <td class="p-3 text-center"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">28 bidons</span></td>
+            </tr>
+            <tr>
+              <td class="p-3 font-bold">Ciment CPJ35 (Tonne)</td>
+              <td class="p-3 text-center text-emerald-700 font-bold">+12%</td>
+              <td class="p-3 text-center"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">120 t</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 4. FACTURATION PDF -->
+    <div id="view-invoices" class="space-y-4 hidden">
+      <div class="bg-white rounded-2xl border border-slate-200/80 shadow-md p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div>
+            <span class="text-xs font-bold text-[#667085]">Facture Client</span>
+            <h3 class="text-xl font-black text-[#1717F5]">FAC-0001</h3>
+          </div>
+          <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">Payée</span>
+        </div>
+        <div class="text-xs space-y-1">
+          <p><strong>Client :</strong> ETS Sainte-Marie (Grand Marché Lomé)</p>
+          <p><strong>Total TTC :</strong> 196 000 FCFA</p>
+          <p><strong>Règlement :</strong> Flooz (Moov Africa Togo)</p>
+        </div>
+        <div class="pt-3 border-t border-slate-100 flex flex-col sm:flex-row gap-2.5 pb-8">
+          <button onclick="window.print()" class="w-full sm:flex-1 py-3.5 px-4 rounded-xl bg-[#FFD400] text-[#17213D] font-black text-sm shadow-md hover:bg-amber-400 transition flex items-center justify-center gap-2">
+            <i data-lucide="download" class="w-4 h-4"></i>
+            <span class="truncate">Télécharger la facture PDF</span>
+          </button>
+          <button onclick="window.print()" class="w-full sm:w-auto py-2.5 px-4 rounded-xl border border-slate-300 hover:bg-slate-50 text-[#17213D] font-bold text-xs transition flex items-center justify-center gap-1.5">
+            <i data-lucide="printer" class="w-4 h-4"></i>
+            <span>Imprimer</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. ABONNEMENT -->
+    <div id="view-subscription" class="space-y-4 hidden">
+      <div class="text-center space-y-1">
+        <h2 class="text-xl font-black text-[#1717F5]">Formules d'Abonnement StockPilot</h2>
+        <p class="text-xs text-[#667085]">Tarifs officiels en Francs CFA (XOF) avec PayGate Flooz / T-Money.</p>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+          <h4 class="font-bold text-sm">Découverte</h4>
+          <p class="text-xl font-black text-[#1717F5]">30 000 F <span class="text-xs font-normal text-[#667085]">/ an</span></p>
+          <p class="text-[#667085]">Micro-commerces (1 utilisateur, 1 magasin)</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border-2 border-[#1717F5] shadow-md space-y-2 relative">
+          <span class="absolute -top-2.5 right-4 bg-[#FFD400] text-[#17213D] text-[10px] font-black px-2 py-0.5 rounded-full">Recommandé</span>
+          <h4 class="font-bold text-sm">Professionnel</h4>
+          <p class="text-xl font-black text-[#1717F5]">50 000 F <span class="text-xs font-normal text-[#667085]">/ an</span></p>
+          <p class="text-[#667085]">Boutiques établies (3 utilisateurs, 2 magasins)</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+          <h4 class="font-bold text-sm">Business</h4>
+          <p class="text-xl font-black text-[#1717F5]">90 000 F <span class="text-xs font-normal text-[#667085]">/ an</span></p>
+          <p class="text-[#667085]">PME (10 utilisateurs, 5 magasins)</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+          <h4 class="font-bold text-sm">Enterprise</h4>
+          <p class="text-xl font-black text-[#1717F5]">150 000 F <span class="text-xs font-normal text-[#667085]">/ an</span></p>
+          <p class="text-[#667085]">Grands comptes (Illimité + pharmacie)</p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- BARRE DE NAVIGATION BASSE OFFICIELLE (BOTTOM BAR) -->
+  <div class="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 px-3 py-2 shadow-lg flex items-center justify-around">
+    <button onclick="showTab('dashboard')" class="flex flex-col items-center gap-1 text-[#1717F5]">
+      <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+      <span class="text-[10px] font-bold">Accueil</span>
+    </button>
+    <button onclick="showTab('products')" class="flex flex-col items-center gap-1 text-[#667085]">
+      <i data-lucide="package" class="w-5 h-5"></i>
+      <span class="text-[10px] font-bold">Stock</span>
+    </button>
+    <button onclick="showTab('pos')" class="-mt-5 w-14 h-14 rounded-full bg-[#FFD400] text-[#17213D] border-4 border-[#EEF2FC] shadow-lg flex items-center justify-center font-black">
+      <i data-lucide="shopping-cart" class="w-6 h-6"></i>
+    </button>
+    <button onclick="showTab('invoices')" class="flex flex-col items-center gap-1 text-[#667085]">
+      <i data-lucide="file-text" class="w-5 h-5"></i>
+      <span class="text-[10px] font-bold">Factures</span>
+    </button>
+    <button onclick="showTab('subscription')" class="flex flex-col items-center gap-1 text-[#667085]">
+      <i data-lucide="sparkles" class="w-5 h-5"></i>
+      <span class="text-[10px] font-bold">Plus</span>
+    </button>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    // Salutation horaire & phrases de concentration
+    const quotes = [
+      "Chaque vente compte. Restez concentré sur vos objectifs du jour.",
+      "La rigueur dans les stocks est le secret d'un commerce prospère.",
+      "Focalisez-vous sur la valeur apportée à vos clients et la qualité du service.",
+      "Une gestion claire transforme chaque opportunité en réussite durable.",
+      "La précision et la constance sont les clés de l'excellence commerciale.",
+      "Maîtrisez vos marges et votre trésorerie avec discipline et lucidité.",
+      "L'effort d'aujourd'hui construit la solidité de votre entreprise de demain."
+    ];
+
+    const hour = new Date().getHours();
+    const greetingText = (hour >= 5 && hour < 18) ? "Bonjour Simon" : "Salut Simon";
+    const userGreetingEl = document.getElementById('user-greeting');
+    if (userGreetingEl) userGreetingEl.innerText = greetingText;
+
+    const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+    const focusQuoteEl = document.getElementById('focus-quote');
+    if (focusQuoteEl) focusQuoteEl.innerText = "« " + randomQuote + " »";
+
+    function showTab(tab) {
+      ['dashboard', 'pos', 'products', 'invoices', 'subscription'].forEach(t => {
+        document.getElementById('view-' + t).classList.add('hidden');
+        const dBtn = document.getElementById('d-btn-' + t);
+        if (dBtn) {
+          dBtn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold transition text-white hover:bg-white/10';
+        }
+      });
+      document.getElementById('view-' + tab).classList.remove('hidden');
+      const activeBtn = document.getElementById('d-btn-' + tab);
+      if (activeBtn) {
+        activeBtn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold transition bg-white text-[#1717F5] shadow-sm';
+      }
+    }
+  </script>
+</body>
+</html>

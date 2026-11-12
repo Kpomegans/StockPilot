@@ -1,0 +1,21 @@
+{
+  "name": "StockPilot - Gestion Commerciale & Stocks",
+  "short_name": "StockPilot",
+  "description": "SaaS professionnel de gestion de stock, ventes, achats et facturation pour le Togo et l'Afrique francophone en FCFA.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#EEF2FC",
+  "theme_color": "#1717F5",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
