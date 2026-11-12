@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-// --- UTILITAIRES DE FORMATAGE & SÉCURITÉ ---
+// --- UTILITAIRES DE FORMATAGE ---
 const fmt = (n) => Number(n || 0).toLocaleString('fr-FR');
 
 const ROLES = {
@@ -47,7 +47,7 @@ const INITIAL_PRODUCTS = [
   { id: 6, n: 'Lait en poudre 400 g', p: 2200, s: 20, buy: 1850, min: 10 }
 ];
 
-// --- GÉNÉRATEUR PDF TICKET DE CAISSE SÉCURISÉ ---
+// --- GÉNÉRATEUR PDF TICKET DE CAISSE ---
 function generateReceiptPdf(sale) {
   const f = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   const C = 34;
@@ -131,7 +131,7 @@ export default function App() {
   const [role, setRole] = useState('proprietaire');
   const [toast, setToast] = useState('');
 
-  // Données persistantes
+  // Initialisation à 0 franc et 0 vente au départ
   const [products, setProducts] = useState(() => {
     const saved = localStorage.getItem('sp_react_products');
     return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
@@ -139,11 +139,7 @@ export default function App() {
 
   const [sales, setSales] = useState(() => {
     const saved = localStorage.getItem('sp_react_sales');
-    return saved ? JSON.parse(saved) : [
-      { no: 'FAC-0003', cl: 'Ets Kokou', t: '12:03', date: '12/11/2026', pay: 'T-Money', tot: 45000, sub: 45000, d: 0, rcv: 45000, chg: 0, items: [{ n: 'Riz parfumé 5 kg', p: 2500, q: 18 }] },
-      { no: 'FAC-0002', cl: 'Mme Amavi', t: '11:15', date: '12/11/2026', pay: 'Flooz', tot: 12800, sub: 12800, d: 0, rcv: 12800, chg: 0, items: [{ n: 'Huile végétale 1 L', p: 1500, q: 8 }] },
-      { no: 'FAC-0001', cl: 'Client de passage', t: '10:42', date: '12/11/2026', pay: 'Espèces', tot: 3500, sub: 3500, d: 0, rcv: 4000, chg: 500, items: [{ n: 'Sucre 1 kg', p: 800, q: 4 }] }
-    ];
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [clients, setClients] = useState(() => {
@@ -157,9 +153,7 @@ export default function App() {
 
   const [closedDays, setClosedDays] = useState(() => {
     const saved = localStorage.getItem('sp_react_closed');
-    return saved ? JSON.parse(saved) : [
-      { date: '11/11/2026', tot: 159000, n: 16, by: 'Propriétaire' }
-    ];
+    return saved ? JSON.parse(saved) : [];
   });
 
   // Panier & Vente
@@ -211,28 +205,27 @@ export default function App() {
 
   const showToast = (msg) => {
     setToast(msg);
-    setTimeout(() => setToast(''), 2200);
+    setTimeout(() => setToast(''), 2500);
   };
 
-  // --- STATISTIQUES EN TEMPS RÉEL DU JOUR ---
-  // Chaque vente ajoutée à `sales` incrémente automatiquement `totalToday` et `salesCount`
+  // --- CALCUL EN DIRECT DES VENTES DU JOUR (COMMENCE À 0 FCFA) ---
   const totalToday = useMemo(() => sales.reduce((sum, s) => sum + s.tot, 0), [sales]);
   const salesCount = sales.length;
   const avgBasket = salesCount ? Math.round(totalToday / salesCount) : 0;
 
-  // Répartition paiements du jour
+  // Répartition des paiements du jour (commence à 0)
   const paymentBreakdown = useMemo(() => {
     const res = { 'Espèces': 0, 'Flooz': 0, 'T-Money': 0 };
     sales.forEach((s) => { res[s.pay] = (res[s.pay] || 0) + s.tot; });
     return res;
   }, [sales]);
 
-  // Graphique dynamique qui suit les encaissements en direct
+  // Graphique d'évolution des ventes réactif
   const chartPoints = useMemo(() => {
-    const data7 = [98000, 121000, 87000, 142000, 133000, 159000, totalToday];
-    const data30 = Array.from({ length: 30 }, (_, i) => (i === 29 ? totalToday : Math.round(90000 + Math.sin(i / 3) * 28000 + i * 2200)));
+    const data7 = [0, 0, 0, 0, 0, 0, totalToday];
+    const data30 = Array.from({ length: 30 }, (_, i) => (i === 29 ? totalToday : 0));
     const d = period === 7 ? data7 : data30;
-    const max = Math.max(...d, 1) * 1.15;
+    const max = Math.max(...d, 1000) * 1.15;
     const W = 460;
     const H = 130;
     const step = (W - 20) / (d.length - 1);
@@ -274,7 +267,7 @@ export default function App() {
     });
   };
 
-  // --- VALIDATION DE VENTE & AJOUT IMMÉDIAT AUX VENTES DU JOUR ---
+  // --- ENCAISSEMENT : AJOUT INSTANTANÉ AU TOTAL DU JOUR ---
   const handleValidateSale = () => {
     if (!cartLines.length) return;
     const rcv = Number(receivedAmount) || 0;
@@ -311,14 +304,14 @@ export default function App() {
       items: cartLines.map((l) => ({ n: l.n, p: l.p, q: l.qty }))
     };
 
-    // Ajout en tête de liste : incrémente immédiatement totalToday
+    // Le nouveau montant s'ajoute en direct aux Ventes du jour
     setSales((prev) => [newSale, ...prev]);
     setLastCompletedSale(newSale);
     setShowSaleModal(true);
     setCart({});
     setDiscount('');
     setReceivedAmount('');
-    showToast(`Vente ${no} encaissée (+${fmt(totalToPay)} FCFA aux ventes du jour) ✓`);
+    showToast(`Vente validée ! +${fmt(totalToPay)} FCFA ajoutés aux ventes du jour ✓`);
   };
 
   const handleAddProduct = () => {
@@ -367,7 +360,7 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* HEADER SUPÉRIEUR */}
+      {/* HEADER FIXE PARTOUT : AFFICHE TOUJOURS LES VENTES DU JOUR EN DIRECT */}
       <header>
         <div className="top">
           <div className="logo">
@@ -406,11 +399,14 @@ export default function App() {
           <ChevronRight size={15} />
         </div>
 
-        <div className="lbl">Ventes du jour (mises à jour en direct)</div>
+        {/* COMPTEUR EN DIRECT DES VENTES DU JOUR */}
+        <div className="lbl">Ventes du jour (cumul en direct)</div>
         <div>
           <span className="big">{hideAmounts ? '••••••' : fmt(totalToday)}</span>
           <small className="big"><small> FCFA</small></small>
-          <span className="trend">▲ {salesCount} vente{salesCount > 1 ? 's' : ''}</span>
+          <span className="trend">
+            {salesCount === 0 ? '0 vente' : `${salesCount} vente${salesCount > 1 ? 's' : ''} réalisée${salesCount > 1 ? 's' : ''}`}
+          </span>
         </div>
 
         <div style={{ marginTop: 10 }}>
@@ -436,8 +432,8 @@ export default function App() {
           <div className="dash-row-full">
             <div className="grid2">
               <div className="card kpi">
-                <div className="t">Ventes réalisées</div>
-                <div className="v">{salesCount} <small>aujourd’hui</small></div>
+                <div className="t">Ventes réalisées aujourd'hui</div>
+                <div className="v">{salesCount} <small>{salesCount > 1 ? 'ventes' : 'vente'}</small></div>
               </div>
               <div className="card kpi">
                 <div className="t">Panier moyen</div>
@@ -504,7 +500,7 @@ export default function App() {
                   </div>
                 </div>
                 <div style={{ color: 'var(--mute)', fontSize: 13, marginTop: 4 }}>
-                  Total sur {period} jours : <b>{hideAmounts ? '••••••' : `${fmt(chartPoints.totalP)} FCFA`}</b>
+                  Total cumulé : <b>{hideAmounts ? '••••••' : `${fmt(totalToday)} FCFA`}</b>
                 </div>
 
                 <div className="chart-container">
@@ -546,37 +542,43 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Dernières ventes avec bouton direct de téléchargement PDF */}
+              {/* Dernières ventes avec bouton de téléchargement direct */}
               <div className="card">
                 <div className="row">
-                  <h2>Dernières ventes</h2>
+                  <h2>Dernières ventes ({salesCount})</h2>
                   <button onClick={() => setCurrentTab('reports')} style={{ color: 'var(--blue)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span>Historique complet</span>
+                    <span>Historique</span>
                     <ChevronRight size={14} />
                   </button>
                 </div>
-                <ul className="list">
-                  {sales.slice(0, 5).map((s, idx) => (
-                    <li key={idx}>
-                      <span className="av"><Receipt size={18} /></span>
-                      <div className="grow">
-                        <b>{s.cl}</b>
-                        <span>{s.no} · {s.t} · {s.pay}</span>
-                      </div>
-                      <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span className="amt">{hideAmounts ? '••••' : `${fmt(s.tot)} FCFA`}</span>
-                        <button
-                          className="btn-icon-receipt"
-                          onClick={() => downloadReceipt(s, showToast)}
-                          title={`Télécharger le reçu ${s.no}`}
-                          aria-label={`Télécharger le reçu ${s.no}`}
-                        >
-                          <Download size={15} />
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                {sales.length === 0 ? (
+                  <p style={{ color: 'var(--mute)', margin: '14px 0', fontSize: 13 }}>
+                    Aucune vente enregistrée pour le moment. Le total du jour est à <b>0 FCFA</b>.
+                  </p>
+                ) : (
+                  <ul className="list">
+                    {sales.slice(0, 5).map((s, idx) => (
+                      <li key={idx}>
+                        <span className="av"><Receipt size={18} /></span>
+                        <div className="grow">
+                          <b>{s.cl}</b>
+                          <span>{s.no} · {s.t} · {s.pay}</span>
+                        </div>
+                        <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="amt">{hideAmounts ? '••••' : `${fmt(s.tot)} FCFA`}</span>
+                          <button
+                            className="btn-icon-receipt"
+                            onClick={() => downloadReceipt(s, showToast)}
+                            title={`Télécharger le reçu ${s.no}`}
+                            aria-label={`Télécharger le reçu ${s.no}`}
+                          >
+                            <Download size={15} />
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
 
@@ -588,9 +590,9 @@ export default function App() {
                   <h2>Modes de paiement du jour</h2>
                 </div>
                 <div className="bar" style={{ height: 12, margin: '14px 0 10px' }}>
-                  <i style={{ width: `${totalToday ? (paymentBreakdown['Espèces'] / totalToday) * 100 : 50}%`, background: 'var(--blue)' }}></i>
-                  <i style={{ width: `${totalToday ? (paymentBreakdown['Flooz'] / totalToday) * 100 : 30}%`, background: 'var(--yellow)' }}></i>
-                  <i style={{ width: `${totalToday ? (paymentBreakdown['T-Money'] / totalToday) * 100 : 20}%`, background: '#f97316' }}></i>
+                  <i style={{ width: `${totalToday ? (paymentBreakdown['Espèces'] / totalToday) * 100 : 0}%`, background: 'var(--blue)' }}></i>
+                  <i style={{ width: `${totalToday ? (paymentBreakdown['Flooz'] / totalToday) * 100 : 0}%`, background: 'var(--yellow)' }}></i>
+                  <i style={{ width: `${totalToday ? (paymentBreakdown['T-Money'] / totalToday) * 100 : 0}%`, background: '#f97316' }}></i>
                 </div>
                 <div className="payment-list">
                   <div className="payment-row">
@@ -875,7 +877,7 @@ export default function App() {
               </div>
             )}
 
-            {/* GRILLE D'INVENTAIRE PLEINE LARGEUR */}
+            {/* GRILLE D'INVENTAIRE */}
             <div className="stock-full-grid">
               {products.map((p) => {
                 const isLow = p.s <= p.min;
@@ -948,27 +950,33 @@ export default function App() {
 
           <div className="card" style={{ marginTop: 14 }}>
             <h2>Historique Complet des Ventes & Reçus</h2>
-            <ul className="list">
-              {sales.map((s, idx) => (
-                <li key={idx}>
-                  <span className="av"><Receipt size={18} /></span>
-                  <div className="grow">
-                    <b>{s.no} · {s.cl}</b>
-                    <span>{s.date} à {s.t} · {s.pay}</span>
-                  </div>
-                  <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <b style={{ whiteSpace: 'nowrap', fontSize: 16 }}>{fmt(s.tot)} FCFA</b>
-                    <button
-                      className="btn-icon-receipt"
-                      onClick={() => downloadReceipt(s, showToast)}
-                      title={`Télécharger le reçu PDF ${s.no}`}
-                    >
-                      <Download size={16} />
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            {sales.length === 0 ? (
+              <p style={{ color: 'var(--mute)', margin: '14px 0', fontSize: 13 }}>
+                Aucune vente enregistrée aujourd'hui.
+              </p>
+            ) : (
+              <ul className="list">
+                {sales.map((s, idx) => (
+                  <li key={idx}>
+                    <span className="av"><Receipt size={18} /></span>
+                    <div className="grow">
+                      <b>{s.no} · {s.cl}</b>
+                      <span>{s.date} à {s.t} · {s.pay}</span>
+                    </div>
+                    <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <b style={{ whiteSpace: 'nowrap', fontSize: 16 }}>{fmt(s.tot)} FCFA</b>
+                      <button
+                        className="btn-icon-receipt"
+                        onClick={() => downloadReceipt(s, showToast)}
+                        title={`Télécharger le reçu PDF ${s.no}`}
+                      >
+                        <Download size={16} />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="card" style={{ marginTop: 14 }}>
@@ -1055,7 +1063,7 @@ export default function App() {
                 ]);
                 setSales([]);
                 setShowCloseModal(false);
-                showToast('Journée clôturée et archivée avec succès ✓');
+                showToast('Journée clôturée et archivée avec succès ✓ Caisse remise à 0 FCFA');
               }}
             >
               Confirmer la clôture
@@ -1072,7 +1080,7 @@ export default function App() {
       )}
 
       {/* =========================================================
-          MODAL SUCCÈS VENTE — AVEC TÉLÉCHARGEMENT DIRECT DU REÇU
+          MODAL SUCCÈS VENTE — AVEC REDIRECTION ET ACTUALISATION DIRECTE
           ========================================================= */}
       {showSaleModal && lastCompletedSale && (
         <div className="ov">
@@ -1105,7 +1113,7 @@ export default function App() {
               )}
             </div>
 
-            {/* BOUTON DE TÉLÉCHARGEMENT DIRECT DU REÇU CLIENT */}
+            {/* BOUTON 1 : TÉLÉCHARGER LE REÇU CLIENT */}
             <button
               className="cta"
               style={{ background: 'var(--blue)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}
@@ -1115,21 +1123,23 @@ export default function App() {
               <span>Télécharger le reçu client (PDF)</span>
             </button>
 
+            {/* BOUTON 2 : NOUVELLE VENTE -> MET DIRECTEMENT LE COMPTEUR À JOUR SUR L'ACCUEIL */}
             <button
               className="cta"
               style={{ background: 'var(--yellow)', color: '#111', marginTop: 4 }}
               onClick={() => {
                 setShowSaleModal(false);
-                setCurrentTab('vente');
+                setCurrentTab('accueil'); // Retour direct sur l'accueil pour voir immédiatement les ventes du jour et le montant cumulé !
+                showToast(`Total du jour actualisé : ${fmt(totalToday)} FCFA (${salesCount} ventes)`);
               }}
             >
-              Nouvelle vente
+              Voir le tableau de bord & Nouvelle vente
             </button>
           </div>
         </div>
       )}
 
-      {/* NAVIGATION PRINCIPALE (SIDEBAR DESKTOP & BARRE INFÉRIEURE MOBILE) */}
+      {/* NAVIGATION PRINCIPALE */}
       <nav aria-label="Navigation principale">
         <button
           aria-current={currentTab === 'accueil' ? 'page' : undefined}
