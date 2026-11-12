@@ -1,4 +1,30 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import {
+  LayoutDashboard,
+  Package,
+  ShoppingCart,
+  BarChart3,
+  Settings,
+  PackagePlus,
+  ScanBarcode,
+  ClipboardList,
+  Store,
+  Moon,
+  Sun,
+  Eye,
+  EyeOff,
+  AlertTriangle,
+  Receipt,
+  User,
+  Plus,
+  Minus,
+  CheckCircle2,
+  Search,
+  ChevronRight,
+  TrendingUp,
+  Layers,
+  ArrowRight
+} from 'lucide-react';
 import './App.css';
 
 // --- UTILITAIRES & SÉCURITÉ ---
@@ -66,7 +92,7 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [period, setPeriod] = useState(7);
 
-  // Formulaires modaux
+  // Formulaires
   const [showNewProd, setShowNewProd] = useState(false);
   const [newProdName, setNewProdName] = useState('');
   const [newProdBuy, setNewProdBuy] = useState('');
@@ -82,7 +108,7 @@ export default function App() {
   const [showSaleModal, setShowSaleModal] = useState(false);
   const [lastCompletedSale, setLastCompletedSale] = useState(null);
 
-  // Persistance automatique
+  // Sauvegardes
   useEffect(() => {
     localStorage.setItem('sp_react_products', JSON.stringify(products));
   }, [products]);
@@ -109,19 +135,19 @@ export default function App() {
     setTimeout(() => setToast(''), 2200);
   };
 
-  // Statistiques globales
+  // Statistiques
   const totalToday = useMemo(() => sales.reduce((sum, s) => sum + s.tot, 0), [sales]);
   const salesCount = sales.length;
   const avgBasket = salesCount ? Math.round(totalToday / salesCount) : 0;
 
-  // Répartition des paiements
+  // Répartition paiements
   const paymentBreakdown = useMemo(() => {
     const res = { 'Espèces': 0, 'Flooz': 0, 'T-Money': 0 };
     sales.forEach((s) => { res[s.pay] = (res[s.pay] || 0) + s.tot; });
     return res;
   }, [sales]);
 
-  // Données du graphique d'évolution des ventes
+  // Graphique
   const chartPoints = useMemo(() => {
     const data7 = [98000, 121000, 87000, 142000, 133000, 159000, totalToday];
     const data30 = Array.from({ length: 30 }, (_, i) => i === 29 ? totalToday : Math.round(90000 + Math.sin(i / 3) * 28000 + i * 2200));
@@ -137,7 +163,7 @@ export default function App() {
     return { pts, path, last, W, H, totalP, d };
   }, [period, totalToday]);
 
-  // Lignes du panier
+  // Panier
   const cartLines = useMemo(() => {
     return Object.keys(cart).map((id) => {
       const prod = products.find((p) => p.id === Number(id));
@@ -208,7 +234,7 @@ export default function App() {
     setCart({});
     setDiscount('');
     setReceivedAmount('');
-    showToast(`Vente ${no} encaissée avec succès ✓`);
+    showToast(`Vente ${no} enregistrée avec succès ✓`);
   };
 
   const handleAddProduct = () => {
@@ -218,7 +244,7 @@ export default function App() {
     const pMin = Number(newProdMin) || 5;
 
     if (!newProdName.trim()) {
-      showToast('Le nom du produit est obligatoire');
+      showToast('Le nom du produit est requis');
       return;
     }
     if (!pSell || pSell <= 0) {
@@ -255,52 +281,45 @@ export default function App() {
 
   const lowStockProducts = products.filter((p) => p.s <= p.min);
 
-  // SVG ICONS
-  const IconHome = () => (
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" /></svg>
-  );
-  const IconStock = () => (
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="m3 8 9 5 9-5M12 13v8" /></svg>
-  );
-  const IconCart = () => (
-    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" /><path d="M2 3h3l2.7 12.4a1 1 0 0 0 1 .8h9.2a1 1 0 0 0 1-.8L21 7H6" /></svg>
-  );
-  const IconReports = () => (
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18" /><path d="M18 17V9M13 17V5M8 17v-3" /></svg>
-  );
-  const IconPlus = () => (
-    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg>
-  );
-
   return (
     <div className="app">
       {/* HEADER SUPÉRIEUR */}
       <header>
         <div className="top">
-          <div className="logo"><i>▲</i>StockPilot</div>
+          <div className="logo">
+            <span className="logo-badge"><TrendingUp size={18} strokeWidth={2.6} /></span>
+            <span>StockPilot</span>
+          </div>
+
           <div className="user-badge">
+            <User size={13} />
             <span>{ROLES[role].label}</span>
             <button
               onClick={() => {
                 const next = role === 'caissier' ? 'gestionnaire' : role === 'gestionnaire' ? 'proprietaire' : 'caissier';
                 setRole(next);
-                showToast(`Profil : ${ROLES[next].label}`);
+                showToast(`Profil actif : ${ROLES[next].label}`);
               }}
               title="Changer de profil"
             >
-              ⇄ Changer
+              Changer
             </button>
           </div>
+
           <button className="ib" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Changer de thème">
-            {theme === 'dark' ? '☀️' : '🌙'}
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
           <button className="ib" onClick={() => setHideAmounts(!hideAmounts)} aria-label="Masquer montants">
-            👁
+            {hideAmounts ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
         </div>
 
         <div className="shop">
-          <span>🏬 Boutique Centrale · Magasin principal</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <Store size={15} />
+            <span>Boutique Centrale · Magasin principal</span>
+          </div>
+          <ChevronRight size={15} />
         </div>
 
         <div className="lbl">Ventes du jour</div>
@@ -325,11 +344,11 @@ export default function App() {
       </header>
 
       {/* =========================================================
-          VUE 1 : ACCUEIL / TABLEAU DE BORD HARMONIEUX PLEINE LARGEUR
+          VUE 1 : ACCUEIL / TABLEAU DE BORD MODERNE
           ========================================================= */}
       {currentTab === 'accueil' && (
         <main className="dashboard-grid">
-          {/* Ligne 1 : KPI & Raccourcis sur toute la largeur */}
+          {/* Ligne 1 : KPI & Raccourcis Pro */}
           <div className="dash-row-full">
             <div className="grid2">
               <div className="card kpi">
@@ -342,32 +361,48 @@ export default function App() {
               </div>
             </div>
 
+            {/* RACCOURCIS PRO AVEC ICÔNES VECTORIELLES LUCIDE */}
             <div className="card short">
-              <button className="main" onClick={() => setCurrentTab('vente')}>
-                <span>🛒</span>Vente
+              <button className="main pro-shortcut" onClick={() => setCurrentTab('vente')}>
+                <span className="shortcut-icon main-icon">
+                  <ShoppingCart size={22} strokeWidth={2.2} />
+                </span>
+                <b>Vente</b>
               </button>
-              <button onClick={() => setCurrentTab('stock')}>
-                <span>⬇️</span>Entrée
+
+              <button className="pro-shortcut" onClick={() => setCurrentTab('stock')}>
+                <span className="shortcut-icon">
+                  <PackagePlus size={22} strokeWidth={2.2} />
+                </span>
+                <b>Entrée</b>
               </button>
-              <button onClick={() => showToast('Scanner code-barres / QR prêt')}>
-                <span>▦</span>Scanner
+
+              <button className="pro-shortcut" onClick={() => showToast('Scanner code-barres / QR prêt')}>
+                <span className="shortcut-icon">
+                  <ScanBarcode size={22} strokeWidth={2.2} />
+                </span>
+                <b>Scanner</b>
               </button>
-              <button onClick={() => setCurrentTab('stock')}>
-                <span>📋</span>Inventaire
+
+              <button className="pro-shortcut" onClick={() => setCurrentTab('stock')}>
+                <span className="shortcut-icon">
+                  <ClipboardList size={22} strokeWidth={2.2} />
+                </span>
+                <b>Inventaire</b>
               </button>
             </div>
           </div>
 
           {lowStockProducts.length > 0 && (
             <button className="alert dash-alert-full" onClick={() => setCurrentTab('stock')}>
-              <span style={{ fontSize: 24 }}>⚠️</span>
+              <AlertTriangle size={24} style={{ flexShrink: 0 }} />
               <span className="grow">
                 <span>{lowStockProducts.length} produit(s) sous le seuil d'alerte</span><br />
                 <span style={{ fontWeight: 400, fontSize: 13 }}>
                   {lowStockProducts.map((p) => p.n).join(', ')} — Cliquez pour réapprovisionner
                 </span>
               </span>
-              <span>›</span>
+              <ChevronRight size={18} />
             </button>
           )}
 
@@ -431,14 +466,15 @@ export default function App() {
               <div className="card">
                 <div className="row">
                   <h2>Dernières ventes</h2>
-                  <button onClick={() => setCurrentTab('reports')} style={{ color: 'var(--blue)', fontWeight: 700, fontSize: 13 }}>
-                    Historique complet
+                  <button onClick={() => setCurrentTab('reports')} style={{ color: 'var(--blue)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>Historique</span>
+                    <ChevronRight size={14} />
                   </button>
                 </div>
                 <ul className="list">
                   {sales.slice(0, 5).map((s, idx) => (
                     <li key={idx}>
-                      <span className="av">🧾</span>
+                      <span className="av"><Receipt size={18} /></span>
                       <div className="grow">
                         <b>{s.cl}</b>
                         <span>{s.no} · {s.t} · {s.pay}</span>
@@ -450,7 +486,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* COLONNE DROITE (MODES DE PAIEMENT & PRODUITS STARS) */}
+            {/* COLONNE DROITE (MODES DE PAIEMENT & PRODUITS DEMANDÉS) */}
             <div className="dash-col-side">
               {/* Modes de paiement */}
               <div className="card">
@@ -502,23 +538,27 @@ export default function App() {
       )}
 
       {/* =========================================================
-          VUE 2 : CAISSE & VENTE (ORGANISATION 2 COLONNES HARMONIEUSE)
+          VUE 2 : CAISSE & VENTE
           ========================================================= */}
       {currentTab === 'vente' && (
         <main className="pos-layout">
-          {/* Colonne Catalogue (Pleine largeur sur la gauche) */}
+          {/* Catalogue */}
           <div className="card pos-catalog">
             <div className="row">
               <h2>Catalogue Produits</h2>
               <span className="tag ok">{products.length} articles disponibles</span>
             </div>
-            <input
-              className="fld"
-              placeholder="🔍 Rechercher un produit..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ marginTop: 12, marginBottom: 14 }}
-            />
+
+            <div className="search-bar-wrap" style={{ marginTop: 12, marginBottom: 14 }}>
+              <Search size={16} className="search-icon-inside" />
+              <input
+                className="fld fld-with-icon"
+                placeholder="Rechercher un produit par son nom..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+
             <div className="product-grid">
               {products
                 .filter((p) => p.n.toLowerCase().includes(search.toLowerCase()))
@@ -542,14 +582,15 @@ export default function App() {
             </div>
           </div>
 
-          {/* Colonne Panier & Encaissement (Droite) */}
+          {/* Panier & Checkout */}
           <div className="card pos-checkout">
             <h2>Panier en cours</h2>
             <div className="cart-scroll-area">
               {cartLines.length === 0 ? (
-                <p style={{ color: 'var(--mute)', margin: '20px 0', textAlign: 'center' }}>
-                  Panier vide.<br />Touchez un article pour l'ajouter.
-                </p>
+                <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--mute)' }}>
+                  <ShoppingCart size={36} style={{ margin: '0 auto 8px', opacity: 0.3 }} />
+                  <p>Panier vide.<br />Touchez un produit pour l'ajouter.</p>
+                </div>
               ) : (
                 cartLines.map((l) => (
                   <div className="ln" key={l.id}>
@@ -558,9 +599,9 @@ export default function App() {
                       <span>{fmt(l.p)} × {l.qty} = {fmt(l.p * l.qty)} FCFA</span>
                     </div>
                     <div className="qty">
-                      <button onClick={() => handleRemoveFromCart(l.id)}>−</button>
+                      <button onClick={() => handleRemoveFromCart(l.id)}><Minus size={14} /></button>
                       <b>{l.qty}</b>
-                      <button className="pl" onClick={() => handleAddToCart(l)}>+</button>
+                      <button className="pl" onClick={() => handleAddToCart(l)}><Plus size={14} /></button>
                     </div>
                   </div>
                 ))
@@ -810,7 +851,7 @@ export default function App() {
             <ul className="list">
               {sales.map((s, idx) => (
                 <li key={idx}>
-                  <span className="av">🧾</span>
+                  <span className="av"><Receipt size={18} /></span>
                   <div className="grow">
                     <b>{s.no} · {s.cl}</b>
                     <span>{s.date} à {s.t} · {s.pay}</span>
@@ -848,7 +889,7 @@ export default function App() {
             <ul className="list">
               {clients.map((c, idx) => (
                 <li key={idx}>
-                  <span className="av">👤</span>
+                  <span className="av"><User size={18} /></span>
                   <div className="grow">
                     <b>{c.n}</b>
                     <span>{c.tel || 'Aucun numéro de téléphone enregistré'}</span>
@@ -925,7 +966,7 @@ export default function App() {
       {showSaleModal && lastCompletedSale && (
         <div className="ov">
           <div className="card">
-            <div className="chk">✓</div>
+            <div className="chk"><CheckCircle2 size={36} /></div>
             <h2>Vente validée</h2>
             <div style={{ margin: '12px 0', color: 'var(--mute)', fontSize: 14, lineHeight: 1.7 }}>
               {lastCompletedSale.no} · {lastCompletedSale.cl}<br />
@@ -942,13 +983,13 @@ export default function App() {
         </div>
       )}
 
-      {/* NAVIGATION PRINCIPALE (MOBILE & DESKTOP SIDEBAR) */}
+      {/* NAVIGATION PRINCIPALE (SIDEBAR DESKTOP & BARRE MOBILE) */}
       <nav aria-label="Navigation principale">
         <button
           aria-current={currentTab === 'accueil' ? 'page' : undefined}
           onClick={() => setCurrentTab('accueil')}
         >
-          <IconHome />
+          <LayoutDashboard size={20} />
           <span>Accueil</span>
         </button>
 
@@ -956,7 +997,7 @@ export default function App() {
           aria-current={currentTab === 'stock' ? 'page' : undefined}
           onClick={() => setCurrentTab('stock')}
         >
-          <IconStock />
+          <Package size={20} />
           <span>Stock</span>
         </button>
 
@@ -965,7 +1006,7 @@ export default function App() {
           aria-current={currentTab === 'vente' ? 'page' : undefined}
           onClick={() => setCurrentTab('vente')}
         >
-          <em><IconCart /></em>
+          <em><ShoppingCart size={22} /></em>
           <span>Vente</span>
         </button>
 
@@ -973,7 +1014,7 @@ export default function App() {
           aria-current={currentTab === 'reports' ? 'page' : undefined}
           onClick={() => setCurrentTab('reports')}
         >
-          <IconReports />
+          <BarChart3 size={20} />
           <span>Rapports</span>
         </button>
 
@@ -981,7 +1022,7 @@ export default function App() {
           aria-current={currentTab === 'plus' ? 'page' : undefined}
           onClick={() => setCurrentTab('plus')}
         >
-          <IconPlus />
+          <Settings size={20} />
           <span>Plus</span>
         </button>
       </nav>
