@@ -22,12 +22,14 @@ import {
   Search,
   ChevronRight,
   TrendingUp,
-  Layers,
+  Download,
+  Share2,
+  ArrowLeft,
   ArrowRight
 } from 'lucide-react';
 import './App.css';
 
-// --- UTILITAIRES & SÉCURITÉ ---
+// --- UTILITAIRES DE FORMATAGE & SÉCURITÉ ---
 const fmt = (n) => Number(n || 0).toLocaleString('fr-FR');
 
 const ROLES = {
@@ -45,6 +47,83 @@ const INITIAL_PRODUCTS = [
   { id: 6, n: 'Lait en poudre 400 g', p: 2200, s: 20, buy: 1850, min: 10 }
 ];
 
+// --- GÉNÉRATEUR PDF TICKET DE CAISSE SÉCURISÉ ---
+function generateReceiptPdf(sale) {
+  const f = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const C = 34;
+  const R = [];
+  const c = (t, b) => R.push([t.padStart(Math.floor((C + t.length) / 2)), b]);
+  const lr = (l, r, b) => R.push([l.slice(0, C - r.length - 1).padEnd(C - r.length) + r, b]);
+  const hr = () => R.push(['-'.repeat(C)]);
+  const esc = (t) => String(t || '').replace(/[\\()]/g, '\\$&').replace(/[^\x20-\x7E\xA0-\xFF]/g, '?');
+
+  c('STOCKPILOT', 1);
+  c('Boutique Centrale · Magasin Principal');
+  hr();
+  c('REÇU DE VENTE OFFICIEL', 1);
+  hr();
+  lr('Ticket N° ' + (sale.no || ''), sale.t || '');
+  lr('Date', sale.date || '');
+  lr('Client', sale.cl || 'Client de passage');
+  hr();
+  (sale.items || []).forEach((i) => lr(i.q + ' x ' + i.n, f(i.p * i.q) + ' F'));
+  hr();
+  lr('Sous-total', f(sale.sub) + ' FCFA');
+  if (sale.d) lr('Remise accordée', '-' + f(sale.d) + ' FCFA');
+  lr('TOTAL ENCAISSÉ', f(sale.tot) + ' FCFA', 1);
+  hr();
+  lr('Mode de règlement', sale.pay);
+  if (sale.pay === 'Espèces') {
+    lr('Montant remis', f(sale.rcv) + ' FCFA');
+    lr('Monnaie rendue', f(sale.chg) + ' FCFA');
+  }
+  hr();
+  c('Merci de votre confiance !');
+  c('Propulsé par StockPilot v2.1');
+
+  const H = R.length * 13 + 44;
+  let ct = '';
+  R.forEach((r, i) => {
+    ct += 'BT /F' + (r[1] ? 2 : 1) + ' 9 Tf 21 ' + (H - 30 - i * 13) + ' Td (' + esc(r[0]) + ') Tj ET\n';
+  });
+
+  const o = [];
+  o[1] = '<</Type/Catalog/Pages 2 0 R>>';
+  o[2] = '<</Type/Pages/Kids[3 0 R]/Count 1>>';
+  o[3] = '<</Type/Page/Parent 2 0 R/MediaBox[0 0 226 ' + H + ']/Resources<</Font<</F1 4 0 R/F2 5 0 R>>>>/Contents 6 0 R>>';
+  o[4] = '<</Type/Font/Subtype/Type1/BaseFont/Courier/Encoding/WinAnsiEncoding>>';
+  o[5] = '<</Type/Font/Subtype/Type1/BaseFont/Courier-Bold/Encoding/WinAnsiEncoding>>';
+  o[6] = '<</Length ' + ct.length + '>>\nstream\n' + ct + 'endstream';
+
+  let p = '%PDF-1.4\n';
+  const off = [];
+  for (let i = 1; i <= 6; i++) {
+    off[i] = p.length;
+    p += i + ' 0 obj\n' + o[i] + '\nendobj\n';
+  }
+  const x = p.length;
+  p += 'xref\n0 7\n0000000000 65535 f \n' + off.slice(1).map((v) => String(v).padStart(10, '0') + ' 00000 n \n').join('') + 'trailer\n<</Size 7/Root 1 0 R>>\nstartxref\n' + x + '\n%%EOF';
+  return Uint8Array.from(p, (ch) => ch.charCodeAt(0) & 255);
+}
+
+function downloadReceipt(sale, notify) {
+  try {
+    const bytes = generateReceiptPdf(sale);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Recu-${sale.no}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    if (notify) notify(`Reçu ${sale.no} téléchargé ✓`);
+  } catch (err) {
+    if (notify) notify('Erreur lors du téléchargement du reçu');
+  }
+}
+
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('sp_theme') || 'light');
   const [hideAmounts, setHideAmounts] = useState(false);
@@ -61,9 +140,9 @@ export default function App() {
   const [sales, setSales] = useState(() => {
     const saved = localStorage.getItem('sp_react_sales');
     return saved ? JSON.parse(saved) : [
-      { no: 'FAC-0003', cl: 'Ets Kokou', t: '12:03', date: '12/11/2026', pay: 'T-Money', tot: 45000, sub: 45000, d: 0, items: [{ n: 'Riz parfumé 5 kg', p: 2500, q: 18 }] },
-      { no: 'FAC-0002', cl: 'Mme Amavi', t: '11:15', date: '12/11/2026', pay: 'Flooz', tot: 12800, sub: 12800, d: 0, items: [{ n: 'Huile végétale 1 L', p: 1500, q: 8 }] },
-      { no: 'FAC-0001', cl: 'Client de passage', t: '10:42', date: '12/11/2026', pay: 'Espèces', tot: 3500, sub: 3500, d: 0, items: [{ n: 'Sucre 1 kg', p: 800, q: 4 }] }
+      { no: 'FAC-0003', cl: 'Ets Kokou', t: '12:03', date: '12/11/2026', pay: 'T-Money', tot: 45000, sub: 45000, d: 0, rcv: 45000, chg: 0, items: [{ n: 'Riz parfumé 5 kg', p: 2500, q: 18 }] },
+      { no: 'FAC-0002', cl: 'Mme Amavi', t: '11:15', date: '12/11/2026', pay: 'Flooz', tot: 12800, sub: 12800, d: 0, rcv: 12800, chg: 0, items: [{ n: 'Huile végétale 1 L', p: 1500, q: 8 }] },
+      { no: 'FAC-0001', cl: 'Client de passage', t: '10:42', date: '12/11/2026', pay: 'Espèces', tot: 3500, sub: 3500, d: 0, rcv: 4000, chg: 500, items: [{ n: 'Sucre 1 kg', p: 800, q: 4 }] }
     ];
   });
 
@@ -135,22 +214,23 @@ export default function App() {
     setTimeout(() => setToast(''), 2200);
   };
 
-  // Statistiques
+  // --- STATISTIQUES EN TEMPS RÉEL DU JOUR ---
+  // Chaque vente ajoutée à `sales` incrémente automatiquement `totalToday` et `salesCount`
   const totalToday = useMemo(() => sales.reduce((sum, s) => sum + s.tot, 0), [sales]);
   const salesCount = sales.length;
   const avgBasket = salesCount ? Math.round(totalToday / salesCount) : 0;
 
-  // Répartition paiements
+  // Répartition paiements du jour
   const paymentBreakdown = useMemo(() => {
     const res = { 'Espèces': 0, 'Flooz': 0, 'T-Money': 0 };
     sales.forEach((s) => { res[s.pay] = (res[s.pay] || 0) + s.tot; });
     return res;
   }, [sales]);
 
-  // Graphique
+  // Graphique dynamique qui suit les encaissements en direct
   const chartPoints = useMemo(() => {
     const data7 = [98000, 121000, 87000, 142000, 133000, 159000, totalToday];
-    const data30 = Array.from({ length: 30 }, (_, i) => i === 29 ? totalToday : Math.round(90000 + Math.sin(i / 3) * 28000 + i * 2200));
+    const data30 = Array.from({ length: 30 }, (_, i) => (i === 29 ? totalToday : Math.round(90000 + Math.sin(i / 3) * 28000 + i * 2200)));
     const d = period === 7 ? data7 : data30;
     const max = Math.max(...d, 1) * 1.15;
     const W = 460;
@@ -171,6 +251,7 @@ export default function App() {
     }).filter(Boolean);
   }, [cart, products]);
 
+  const totalCartCount = useMemo(() => cartLines.reduce((acc, l) => acc + l.qty, 0), [cartLines]);
   const subtotal = useMemo(() => cartLines.reduce((acc, l) => acc + l.p * l.qty, 0), [cartLines]);
   const discountVal = Math.min(Math.max(Number(discount) || 0, 0), subtotal);
   const totalToPay = subtotal - discountVal;
@@ -193,6 +274,7 @@ export default function App() {
     });
   };
 
+  // --- VALIDATION DE VENTE & AJOUT IMMÉDIAT AUX VENTES DU JOUR ---
   const handleValidateSale = () => {
     if (!cartLines.length) return;
     const rcv = Number(receivedAmount) || 0;
@@ -205,6 +287,7 @@ export default function App() {
       return;
     }
 
+    // Décrémenter l'inventaire
     setProducts((prev) =>
       prev.map((p) => {
         const inCart = cart[p.id];
@@ -228,13 +311,14 @@ export default function App() {
       items: cartLines.map((l) => ({ n: l.n, p: l.p, q: l.qty }))
     };
 
+    // Ajout en tête de liste : incrémente immédiatement totalToday
     setSales((prev) => [newSale, ...prev]);
     setLastCompletedSale(newSale);
     setShowSaleModal(true);
     setCart({});
     setDiscount('');
     setReceivedAmount('');
-    showToast(`Vente ${no} enregistrée avec succès ✓`);
+    showToast(`Vente ${no} encaissée (+${fmt(totalToPay)} FCFA aux ventes du jour) ✓`);
   };
 
   const handleAddProduct = () => {
@@ -298,7 +382,7 @@ export default function App() {
               onClick={() => {
                 const next = role === 'caissier' ? 'gestionnaire' : role === 'gestionnaire' ? 'proprietaire' : 'caissier';
                 setRole(next);
-                showToast(`Profil actif : ${ROLES[next].label}`);
+                showToast(`Profil : ${ROLES[next].label}`);
               }}
               title="Changer de profil"
             >
@@ -322,11 +406,11 @@ export default function App() {
           <ChevronRight size={15} />
         </div>
 
-        <div className="lbl">Ventes du jour</div>
+        <div className="lbl">Ventes du jour (mises à jour en direct)</div>
         <div>
           <span className="big">{hideAmounts ? '••••••' : fmt(totalToday)}</span>
           <small className="big"><small> FCFA</small></small>
-          <span className="trend">▲ 12 % vs hier</span>
+          <span className="trend">▲ {salesCount} vente{salesCount > 1 ? 's' : ''}</span>
         </div>
 
         <div style={{ marginTop: 10 }}>
@@ -344,7 +428,7 @@ export default function App() {
       </header>
 
       {/* =========================================================
-          VUE 1 : ACCUEIL / TABLEAU DE BORD MODERNE
+          VUE 1 : ACCUEIL / TABLEAU DE BORD
           ========================================================= */}
       {currentTab === 'accueil' && (
         <main className="dashboard-grid">
@@ -361,7 +445,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* RACCOURCIS PRO AVEC ICÔNES VECTORIELLES LUCIDE */}
+            {/* RACCOURCIS PRO */}
             <div className="card short">
               <button className="main pro-shortcut" onClick={() => setCurrentTab('vente')}>
                 <span className="shortcut-icon main-icon">
@@ -406,11 +490,11 @@ export default function App() {
             </button>
           )}
 
-          {/* Ligne 2 : Grille à 2 colonnes majeures équilibrées */}
+          {/* Ligne 2 : Grille à 2 colonnes */}
           <div className="dash-columns">
-            {/* COLONNE GAUCHE (ÉVOLUTION & DERNIÈRES VENTES) */}
+            {/* COLONNE GAUCHE */}
             <div className="dash-col-main">
-              {/* Carte Évolution des ventes avec vrai Graphique SVG */}
+              {/* Carte Évolution des ventes */}
               <div className="card">
                 <div className="row">
                   <h2>Évolution des ventes</h2>
@@ -462,12 +546,12 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Dernières ventes */}
+              {/* Dernières ventes avec bouton direct de téléchargement PDF */}
               <div className="card">
                 <div className="row">
                   <h2>Dernières ventes</h2>
                   <button onClick={() => setCurrentTab('reports')} style={{ color: 'var(--blue)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span>Historique</span>
+                    <span>Historique complet</span>
                     <ChevronRight size={14} />
                   </button>
                 </div>
@@ -479,14 +563,24 @@ export default function App() {
                         <b>{s.cl}</b>
                         <span>{s.no} · {s.t} · {s.pay}</span>
                       </div>
-                      <span className="amt">{hideAmounts ? '••••' : `${fmt(s.tot)} FCFA`}</span>
+                      <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="amt">{hideAmounts ? '••••' : `${fmt(s.tot)} FCFA`}</span>
+                        <button
+                          className="btn-icon-receipt"
+                          onClick={() => downloadReceipt(s, showToast)}
+                          title={`Télécharger le reçu ${s.no}`}
+                          aria-label={`Télécharger le reçu ${s.no}`}
+                        >
+                          <Download size={15} />
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
               </div>
             </div>
 
-            {/* COLONNE DROITE (MODES DE PAIEMENT & PRODUITS DEMANDÉS) */}
+            {/* COLONNE DROITE */}
             <div className="dash-col-side">
               {/* Modes de paiement */}
               <div className="card">
@@ -546,14 +640,14 @@ export default function App() {
           <div className="card pos-catalog">
             <div className="row">
               <h2>Catalogue Produits</h2>
-              <span className="tag ok">{products.length} articles disponibles</span>
+              <span className="tag ok">{products.length} articles</span>
             </div>
 
             <div className="search-bar-wrap" style={{ marginTop: 12, marginBottom: 14 }}>
               <Search size={16} className="search-icon-inside" />
               <input
                 className="fld fld-with-icon"
-                placeholder="Rechercher un produit par son nom..."
+                placeholder="Rechercher un produit..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -574,7 +668,7 @@ export default function App() {
                       <b>{p.n}</b>
                       <div className="prod-price">{fmt(p.p)} FCFA</div>
                       <div className="prod-stock" style={{ color: p.s <= p.min ? 'var(--bad)' : 'var(--mute)' }}>
-                        {p.s <= 0 ? 'Rupture' : `Stock : ${p.s}${cart[p.id] ? ` (${cart[p.id]} au panier)` : ''}`}
+                        {p.s <= 0 ? 'Rupture' : `Stock : ${p.s}${cart[p.id] ? ` (${cart[p.id]})` : ''}`}
                       </div>
                     </div>
                   </button>
@@ -584,7 +678,13 @@ export default function App() {
 
           {/* Panier & Checkout */}
           <div className="card pos-checkout">
-            <h2>Panier en cours</h2>
+            <div className="row">
+              <h2>Panier en cours</h2>
+              {totalCartCount > 0 && (
+                <span className="tag ok">{totalCartCount} article{totalCartCount > 1 ? 's' : ''}</span>
+              )}
+            </div>
+
             <div className="cart-scroll-area">
               {cartLines.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--mute)' }}>
@@ -847,7 +947,7 @@ export default function App() {
           </div>
 
           <div className="card" style={{ marginTop: 14 }}>
-            <h2>Historique Complet des Ventes</h2>
+            <h2>Historique Complet des Ventes & Reçus</h2>
             <ul className="list">
               {sales.map((s, idx) => (
                 <li key={idx}>
@@ -856,7 +956,16 @@ export default function App() {
                     <b>{s.no} · {s.cl}</b>
                     <span>{s.date} à {s.t} · {s.pay}</span>
                   </div>
-                  <b style={{ whiteSpace: 'nowrap', fontSize: 16 }}>{fmt(s.tot)} FCFA</b>
+                  <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <b style={{ whiteSpace: 'nowrap', fontSize: 16 }}>{fmt(s.tot)} FCFA</b>
+                    <button
+                      className="btn-icon-receipt"
+                      onClick={() => downloadReceipt(s, showToast)}
+                      title={`Télécharger le reçu PDF ${s.no}`}
+                    >
+                      <Download size={16} />
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -930,7 +1039,7 @@ export default function App() {
       {/* MODAL CLÔTURE DE JOURNÉE */}
       {showCloseModal && (
         <div className="ov">
-          <div className="card">
+          <div className="card modal-content-wrap">
             <h2>Clôturer la journée ?</h2>
             <p style={{ margin: '14px 0', color: 'var(--mute)', fontSize: 14, lineHeight: 1.6 }}>
               Total encaissé aujourd'hui : <b>{fmt(totalToday)} FCFA</b> ({salesCount} ventes).<br />
@@ -962,28 +1071,65 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL SUCCÈS VENTE */}
+      {/* =========================================================
+          MODAL SUCCÈS VENTE — AVEC TÉLÉCHARGEMENT DIRECT DU REÇU
+          ========================================================= */}
       {showSaleModal && lastCompletedSale && (
         <div className="ov">
-          <div className="card">
+          <div className="card modal-content-wrap">
             <div className="chk"><CheckCircle2 size={36} /></div>
-            <h2>Vente validée</h2>
-            <div style={{ margin: '12px 0', color: 'var(--mute)', fontSize: 14, lineHeight: 1.7 }}>
-              {lastCompletedSale.no} · {lastCompletedSale.cl}<br />
-              <b style={{ color: 'var(--ink)', fontSize: 17 }}>Total : {fmt(lastCompletedSale.tot)} FCFA</b><br />
-              Mode : {lastCompletedSale.pay}
+            <h2>Paiement validé !</h2>
+            
+            <div style={{ margin: '14px 0', background: 'var(--bg)', padding: 14, borderRadius: 14, textAlign: 'left', fontSize: 13, lineHeight: 1.8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--mute)' }}>Référence :</span>
+                <b>{lastCompletedSale.no}</b>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--mute)' }}>Client :</span>
+                <b>{lastCompletedSale.cl}</b>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--mute)' }}>Règlement :</span>
+                <b>{lastCompletedSale.pay}</b>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--line)', marginTop: 8, paddingTop: 6 }}>
+                <span style={{ fontWeight: 700 }}>Total encaissé :</span>
+                <b style={{ color: 'var(--blue)', fontSize: 16 }}>{fmt(lastCompletedSale.tot)} FCFA</b>
+              </div>
               {lastCompletedSale.pay === 'Espèces' && lastCompletedSale.chg > 0 && (
-                <div style={{ color: 'var(--ok)', fontWeight: 700 }}>Monnaie rendue : {fmt(lastCompletedSale.chg)} FCFA</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--ok)' }}>
+                  <span>Monnaie rendue :</span>
+                  <b>{fmt(lastCompletedSale.chg)} FCFA</b>
+                </div>
               )}
             </div>
-            <button className="cta" onClick={() => setShowSaleModal(false)}>
+
+            {/* BOUTON DE TÉLÉCHARGEMENT DIRECT DU REÇU CLIENT */}
+            <button
+              className="cta"
+              style={{ background: 'var(--blue)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}
+              onClick={() => downloadReceipt(lastCompletedSale, showToast)}
+            >
+              <Download size={18} />
+              <span>Télécharger le reçu client (PDF)</span>
+            </button>
+
+            <button
+              className="cta"
+              style={{ background: 'var(--yellow)', color: '#111', marginTop: 4 }}
+              onClick={() => {
+                setShowSaleModal(false);
+                setCurrentTab('vente');
+              }}
+            >
               Nouvelle vente
             </button>
           </div>
         </div>
       )}
 
-      {/* NAVIGATION PRINCIPALE (SIDEBAR DESKTOP & BARRE MOBILE) */}
+      {/* NAVIGATION PRINCIPALE (SIDEBAR DESKTOP & BARRE INFÉRIEURE MOBILE) */}
       <nav aria-label="Navigation principale">
         <button
           aria-current={currentTab === 'accueil' ? 'page' : undefined}
