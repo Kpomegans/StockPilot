@@ -207,6 +207,7 @@ export default function App() {
 
   // Modal sélecteur de rôle responsive / mobile
   const [showRoleModal, setShowRoleModal] = useState(false);
+  const [showScannerModal, setShowScannerModal] = useState(false);
 
   const [showChangePinModal, setShowChangePinModal] = useState(false);
   const [oldPinInput, setOldPinInput] = useState('');
@@ -661,15 +662,16 @@ export default function App() {
           <span className="trend">▲ {totalSalesCountToday} ventes réalisées</span>
         </div>
 
-        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-          <span className="trial">Version v2.1 Sécurisée</span>
+        <div className="header-meta-actions">
+          <span className="trial-badge">StockPilot v2.1 Sécurisé</span>
           {currentPermissions.canClose && (
             <button
-              className="trial"
-              style={{ background: 'rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer' }}
+              className="close-day-btn"
               onClick={() => setShowCloseModal(true)}
+              title="Clôturer la journée de caisse"
             >
-              Clôturer la journée
+              <Receipt size={13} />
+              <span>Clôturer la journée</span>
             </button>
           )}
         </div>
@@ -693,37 +695,69 @@ export default function App() {
               </div>
             </div>
 
-            {/* RACCOURCIS PRO (Le Stock n'apparaît pas pour le Caissier) */}
+            {/* RACCOURCIS PRO REPOSITIONNÉS ET RESPONSIVES (MOBILE-FIRST) */}
             <div className="card short">
-              <button className="main pro-shortcut" onClick={() => setCurrentTab('vente')}>
+              {/* BOUTON 1 : VENTE / CAISSE */}
+              <button
+                className="pro-shortcut main"
+                onClick={() => setCurrentTab('vente')}
+                title="Accéder immédiatement à la caisse et vente"
+              >
                 <span className="shortcut-icon main-icon">
-                  <ShoppingCart size={22} strokeWidth={2.2} />
+                  <ShoppingCart size={22} strokeWidth={2.4} />
                 </span>
-                <b>Vente</b>
+                <span className="shortcut-label-group">
+                  <b>Caisse / Vente</b>
+                  <span>Encaisser client</span>
+                </span>
               </button>
 
+              {/* BOUTON 2 : SCANNER ARTICLES */}
+              <button
+                className="pro-shortcut scanner-btn"
+                onClick={() => setShowScannerModal(true)}
+                title="Ouvrir le scanner de code-barres / QR"
+              >
+                <span className="shortcut-icon">
+                  <ScanBarcode size={22} strokeWidth={2.4} />
+                </span>
+                <span className="shortcut-label-group">
+                  <b>Scanner</b>
+                  <span>Code-barres / QR</span>
+                </span>
+              </button>
+
+              {/* BOUTON 3 : ENTRÉE STOCK (AUTORISÉ GESTIONNAIRE / ADMIN) */}
               {currentPermissions.canViewStock && (
-                <button className="pro-shortcut" onClick={() => setCurrentTab('stock')}>
-                  <span className="shortcut-icon">
-                    <PackagePlus size={22} strokeWidth={2.2} />
+                <button
+                  className="pro-shortcut"
+                  onClick={() => setCurrentTab('stock')}
+                  title="Réceptionner des marchandises"
+                >
+                  <span className="shortcut-icon" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#059669' }}>
+                    <PackagePlus size={22} strokeWidth={2.4} />
                   </span>
-                  <b>Entrée</b>
+                  <span className="shortcut-label-group">
+                    <b>Entrée Stock</b>
+                    <span>Réceptionner</span>
+                  </span>
                 </button>
               )}
 
-              <button className="pro-shortcut" onClick={() => showToast('Scanner code-barres / QR prêt')}>
-                <span className="shortcut-icon">
-                  <ScanBarcode size={22} strokeWidth={2.2} />
-                </span>
-                <b>Scanner</b>
-              </button>
-
+              {/* BOUTON 4 : INVENTAIRE (AUTORISÉ GESTIONNAIRE / ADMIN) */}
               {currentPermissions.canViewStock && (
-                <button className="pro-shortcut" onClick={() => setCurrentTab('stock')}>
-                  <span className="shortcut-icon">
-                    <ClipboardList size={22} strokeWidth={2.2} />
+                <button
+                  className="pro-shortcut"
+                  onClick={() => setCurrentTab('stock')}
+                  title="Consulter l'inventaire complet"
+                >
+                  <span className="shortcut-icon" style={{ background: 'rgba(139, 92, 246, 0.12)', color: '#7c3aed' }}>
+                    <ClipboardList size={22} strokeWidth={2.4} />
                   </span>
-                  <b>Inventaire</b>
+                  <span className="shortcut-label-group">
+                    <b>Inventaire</b>
+                    <span>Comptage & état</span>
+                  </span>
                 </button>
               )}
             </div>
@@ -902,14 +936,34 @@ export default function App() {
               <span className="tag ok">{products.length} articles</span>
             </div>
 
-            <div className="search-bar-wrap" style={{ marginTop: 12, marginBottom: 14 }}>
-              <Search size={16} className="search-icon-inside" />
-              <input
-                className="fld fld-with-icon"
-                placeholder="Rechercher un produit..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+            <div className="search-bar-wrap" style={{ marginTop: 12, marginBottom: 14, display: 'flex', gap: 8 }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <Search size={16} className="search-icon-inside" />
+                <input
+                  className="fld fld-with-icon"
+                  placeholder="Rechercher un produit..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <button
+                className="qb"
+                onClick={() => setShowScannerModal(true)}
+                title="Biper un article avec le scanner"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '0 12px',
+                  background: 'var(--yellow)',
+                  color: '#111',
+                  fontWeight: 700,
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <ScanBarcode size={18} />
+                <span className="hide-mobile-sm">Scanner</span>
+              </button>
             </div>
 
             <div className="product-grid">
@@ -1743,6 +1797,96 @@ export default function App() {
             >
               Fermer
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL SCANNER CODE-BARRES / QR INTERACTIF (MOBILE-FACE) */}
+      {showScannerModal && (
+        <div className="ov">
+          <div className="card modal-content-wrap" style={{ maxWidth: 440 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span className="av" style={{ background: 'var(--blue)', color: '#fff' }}>
+                  <ScanBarcode size={20} />
+                </span>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 18 }}>Scanner Code-Barres / QR</h2>
+                  <span style={{ fontSize: 12, color: 'var(--mute)' }}>Lecteur optique & bipeur de caisse</span>
+                </div>
+              </div>
+              <button
+                className="ib"
+                style={{ background: 'var(--bg)', color: 'var(--ink)' }}
+                onClick={() => setShowScannerModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* VISEUR DE CAMÉRA OPTIQUE ANIMÉ */}
+            <div className="scanner-viewfinder">
+              <div className="scanner-laser"></div>
+              <div className="scanner-reticle">
+                <ScanBarcode size={44} strokeWidth={1.5} style={{ opacity: 0.35, color: '#fff' }} />
+                <span style={{ color: '#10b981', fontSize: 12, fontWeight: 700, marginTop: 8 }}>
+                  Viseur actif · Pointez le code-barres
+                </span>
+              </div>
+            </div>
+
+            {/* BISEUR DIRECT D'ARTICLES (SIMULATION RAPIDE DE DOUCHETTE) */}
+            <div style={{ marginTop: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)', display: 'block', marginBottom: 6 }}>
+                Biper instantanément un article au panier :
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, maxHeight: 180, overflowY: 'auto' }}>
+                {products.map((p) => (
+                  <button
+                    key={p.id}
+                    className="qb"
+                    disabled={p.s <= 0}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-start',
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      background: 'var(--bg)',
+                      border: '1px solid var(--line)'
+                    }}
+                    onClick={() => {
+                      handleAddToCart(p);
+                      showToast(`Bip ! +1 ${p.n} ajouté au panier ✓`);
+                    }}
+                  >
+                    <b style={{ fontSize: 13, color: 'var(--ink)' }}>{p.n}</b>
+                    <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>{fmt(p.p)} FCFA</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button
+                className="qb"
+                style={{ flex: 1, padding: 12 }}
+                onClick={() => setShowScannerModal(false)}
+              >
+                Fermer
+              </button>
+              <button
+                className="cta"
+                style={{ flex: 1.5, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                onClick={() => {
+                  setShowScannerModal(false);
+                  setCurrentTab('vente');
+                }}
+              >
+                <ShoppingCart size={16} />
+                <span>Voir le Panier ({totalCartCount})</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

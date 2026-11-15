@@ -241,48 +241,124 @@ main {
   font-weight: 600;
 }
 
-/* RACCOURCIS PRO */
+/* ========================================================
+   RACCOURCIS PRO RESPONSIVES & MOBILE-FIRST
+   ======================================================== */
 .short {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  padding: 12px 8px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+@media (max-width: 580px) {
+  .short {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    padding: 10px;
+  }
 }
 
 .pro-shortcut {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 8px 4px;
-  border-radius: 14px;
+  gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  border-radius: 16px;
   color: var(--ink);
-  transition: transform 0.15s, background 0.15s;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+  min-height: 64px;
+  width: 100%;
 }
 
 .pro-shortcut:hover {
-  background: var(--bg);
+  background: var(--card);
+  border-color: var(--blue);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.pro-shortcut:active {
+  transform: scale(0.97);
+}
+
+.pro-shortcut.main {
+  background: linear-gradient(135deg, #ffd60a 0%, #ffc300 100%);
+  color: #111;
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(255, 214, 10, 0.35);
+}
+
+.pro-shortcut.main:hover {
+  filter: brightness(1.03);
+  box-shadow: 0 6px 18px rgba(255, 214, 10, 0.45);
+}
+
+.pro-shortcut.scanner-btn {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+.pro-shortcut.scanner-btn:hover {
+  background: rgba(59, 130, 246, 0.14);
 }
 
 .shortcut-icon {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   border-radius: 12px;
-  background: var(--bg);
+  background: #fff;
   color: var(--blue);
   display: grid;
   place-items: center;
-  border: 1px solid var(--line);
-  transition: transform 0.15s;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
 }
 
-.shortcut-icon.main-icon {
-  background: var(--yellow);
-  color: #111;
+.pro-shortcut:hover .shortcut-icon {
+  transform: scale(1.08);
+}
+
+.pro-shortcut.main .shortcut-icon {
+  background: #111;
+  color: #ffd60a;
   border-color: transparent;
-  box-shadow: 0 3px 8px rgba(255, 214, 10, 0.35);
+}
+
+.pro-shortcut.scanner-btn .shortcut-icon {
+  background: var(--blue);
+  color: #fff;
+  border-color: transparent;
+}
+
+.shortcut-label-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.shortcut-label-group b {
+  font-size: 13px;
+  font-weight: 800;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shortcut-label-group span {
+  font-size: 11px;
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 h2 {
@@ -638,7 +714,7 @@ h2 {
 }
 
 /* ========================================================
-   BARRE DE NAVIGATION BASSE (MOBILE)
+   BARRE DE NAVIGATION BASSE (MOBILE FIRST)
    ======================================================== */
 nav {
   position: fixed;
@@ -648,40 +724,70 @@ nav {
   width: 100%;
   background: var(--card);
   border-top: 1px solid var(--line);
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  padding: 8px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 6px 10px calc(8px + env(safe-area-inset-bottom, 0px));
   border-radius: 20px 20px 0 0;
   z-index: 40;
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
 }
 
 nav button {
+  flex: 1;
+  max-width: 76px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  gap: 3px;
   font-size: 11px;
   font-weight: 600;
   color: var(--mute);
-  padding: 4px 0;
+  padding: 4px 2px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 48px;
+}
+
+nav button:active {
+  transform: scale(0.92);
 }
 
 nav button[aria-current="page"] {
   color: var(--blue);
-  font-weight: 700;
+  font-weight: 800;
+}
+
+nav .sell {
+  position: relative;
+  overflow: visible;
 }
 
 nav .sell em {
-  width: 48px;
-  height: 48px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
-  background: var(--yellow);
+  background: linear-gradient(135deg, #ffd60a 0%, #ffc300 100%);
   display: grid;
   place-items: center;
-  margin-top: -22px;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+  margin-top: -24px;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.45);
   color: #111;
+  border: 3px solid var(--card);
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+nav .sell:active em {
+  transform: scale(0.92);
+}
+
+nav .sell span {
+  font-weight: 800;
+  color: var(--ink);
+  margin-top: 1px;
 }
 
 /* ========================================================
@@ -1343,4 +1449,88 @@ nav .sell em {
     justify-content: center;
   }
 }
+
+/* ========================================================
+   HEADER META ACTIONS (CLÔTURE & VERSION)
+   ======================================================== */
+.header-meta-actions {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.trial-badge {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 99px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.close-day-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  color: #fff;
+  border-radius: 99px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.close-day-btn:hover,
+.close-day-btn:active {
+  background: rgba(255, 255, 255, 0.38);
+  transform: translateY(-1px);
+}
+
+/* ========================================================
+   MODAL SCANNER CODE-BARRES / QR (MOBILE FIRST)
+   ======================================================== */
+.scanner-viewfinder {
+  height: 160px;
+  background: radial-gradient(circle, #1a2544 0%, #080d1a 100%);
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(59, 130, 246, 0.5);
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+.scanner-laser {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  height: 3px;
+  background: #10b981;
+  box-shadow: 0 0 14px 2px #10b981;
+  border-radius: 99px;
+  animation: laserScan 2.2s ease-in-out infinite alternate;
+}
+
+@keyframes laserScan {
+  0% { top: 15%; opacity: 0.4; }
+  100% { top: 85%; opacity: 1; }
+}
+
+.scanner-reticle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  text-align: center;
+  padding: 10px;
+}
+
 
