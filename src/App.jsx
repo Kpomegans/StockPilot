@@ -25,7 +25,14 @@ import {
   Download,
   Share2,
   ArrowLeft,
-  ArrowRight
+  ArrowRight,
+  Shield,
+  ShieldCheck,
+  Lock,
+  Unlock,
+  KeyRound,
+  Check,
+  X
 } from 'lucide-react';
 import './App.css';
 
@@ -33,10 +40,47 @@ import './App.css';
 const fmt = (n) => Number(n || 0).toLocaleString('fr-FR');
 
 const ROLES = {
-  caissier: { label: 'Caissier', canClose: false, canEditPrice: false, canViewBuy: false },
-  gestionnaire: { label: 'Gestionnaire', canClose: true, canEditPrice: false, canViewBuy: false },
-  proprietaire: { label: 'Propriétaire', canClose: true, canEditPrice: true, canViewBuy: true }
+  caissier: { label: 'Caissier', badge: 'Vente uniquement' },
+  gestionnaire: { label: 'Gestionnaire', badge: 'Opérations & Stocks' },
+  proprietaire: { label: 'Administrateur', badge: 'Accès Total & Délégation' }
 };
+
+// Matrice des autorisations par défaut (Le STOCK est strictement masqué au caissier)
+const DEFAULT_PERMISSIONS = {
+  caissier: {
+    canViewStock: false,     // <-- STOCK MASQUÉ AU CAISSIER
+    canEditStock: false,     // Pas d'ajout ni réassort
+    canViewReports: false,   // Pas de rapports financiers
+    canViewBuy: false,       // Pas de prix d'achat ni marges
+    canEditPrice: false,     // Pas de changement de prix
+    canClose: false          // Pas de clôture journalière
+  },
+  gestionnaire: {
+    canViewStock: true,
+    canEditStock: true,
+    canViewReports: true,
+    canViewBuy: false,
+    canEditPrice: false,
+    canClose: true
+  },
+  proprietaire: {
+    canViewStock: true,
+    canEditStock: true,
+    canViewReports: true,
+    canViewBuy: true,
+    canEditPrice: true,
+    canClose: true
+  }
+};
+
+const PERMISSION_DEFINITIONS = [
+  { key: 'canViewStock', label: 'Voir les Stocks & Niveaux', desc: 'Affiche l\'onglet Stock, les unités en rayon et les alertes d\'inventaire.' },
+  { key: 'canEditStock', label: 'Ajouter & Réapprovisionner Articles', desc: 'Permet de créer de nouveaux produits et d\'enregistrer les entrées de stock (+10).' },
+  { key: 'canViewReports', label: 'Consulter les Rapports & Statistiques', desc: 'Accès aux graphiques des ventes, bilans financiers et historiques de clôture.' },
+  { key: 'canClose', label: 'Clôturer la Caisse Journalière', desc: 'Autorise la clôture de fin de journée et l\'archivage des encaissements.' },
+  { key: 'canViewBuy', label: 'Voir les Prix d\'Achat & Marges', desc: 'Affiche le coût d\'achat unitaire et les marges bénéficiaires des produits.' },
+  { key: 'canEditPrice', label: 'Modifier les Prix de Vente', desc: 'Autorise la modification libre des prix de vente affichés.' }
+];
 
 const INITIAL_PRODUCTS = [
   { id: 1, n: 'Sucre 1 kg', p: 800, s: 8, buy: 650, min: 10 },
@@ -46,6 +90,10 @@ const INITIAL_PRODUCTS = [
   { id: 5, n: 'Savon de ménage', p: 250, s: 60, buy: 180, min: 20 },
   { id: 6, n: 'Lait en poudre 400 g', p: 2200, s: 20, buy: 1850, min: 10 }
 ];
+
+// Montant initial fixe de la journée (ex: 184 500 FCFA issu des ventes matinales du magasin)
+const INITIAL_BASELINE_SALES = 184500;
+const INITIAL_BASELINE_COUNT = 18;
 
 // --- GÉNÉRATEUR PDF TICKET DE CAISSE ---
 function generateReceiptPdf(sale) {
@@ -128,17 +176,56 @@ export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('sp_theme') || 'light');
   const [hideAmounts, setHideAmounts] = useState(false);
   const [currentTab, setCurrentTab] = useState('accueil');
-  const [role, setRole] = useState('proprietaire');
+  const [role, setRole] = useState(() => localStorage.getItem('sp_active_role') || 'caissier');
   const [toast, setToast] = useState('');
 
-  // Initialisation à 0 franc et 0 vente au départ
+  // --- SÉCURITÉ & DÉLÉGATION DES PERMISSIONS ---
+  const [permissions, setPermissions] = useState(() => {
+    const saved = localStorage.getItem('sp_role_permissions');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        // fallback
+      }
+    }
+    return DEFAULT_PERMISSIONS;
+  });
+
+  const [adminPin, setAdminPin] = useState(() => {
+    return localStorage.getItem('sp_admin_pin') || '1234';
+  });
+
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [targetRoleToUnlock, setTargetRoleToUnlock] = useState(null);
+
+  const [showChangePinModal, setShowChangePinModal] = useState(false);
+  const [oldPinInput, setOldPinInput] = useState('');
+  const [newPinInput, setNewPinInput] = useState('');
+  const [changePinError, setChangePinError] = useState('');
+
+  // 1. MONTANT INITIAL DU DASHBOARD (Initialisé à 184 500 FCFA ou sauvegardé)
+  const [initialBaseAmount, setInitialBaseAmount] = useState(() => {
+    const saved = localStorage.getItem('sp_base_amount');
+    return saved !== null ? Number(saved) : INITIAL_BASELINE_SALES;
+  });
+
+  const [initialBaseCount, setInitialBaseCount] = useState(() => {
+    const saved = localStorage.getItem('sp_base_count');
+    return saved !== null ? Number(saved) : INITIAL_BASELINE_COUNT;
+  });
+
+  // 2. LISTE DES PRODUITS
   const [products, setProducts] = useState(() => {
     const saved = localStorage.getItem('sp_react_products');
     return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
   });
 
-  const [sales, setSales] = useState(() => {
-    const saved = localStorage.getItem('sp_react_sales');
+  // 3. NOUVELLES VENTES RÉALISÉES
+  const [newSales, setNewSales] = useState(() => {
+    const saved = localStorage.getItem('sp_new_sales');
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -153,7 +240,9 @@ export default function App() {
 
   const [closedDays, setClosedDays] = useState(() => {
     const saved = localStorage.getItem('sp_react_closed');
-    return saved ? JSON.parse(saved) : [];
+    return saved ? JSON.parse(saved) : [
+      { date: '11/11/2026', tot: 159000, n: 16, by: 'Propriétaire' }
+    ];
   });
 
   // Panier & Vente
@@ -181,14 +270,22 @@ export default function App() {
   const [showSaleModal, setShowSaleModal] = useState(false);
   const [lastCompletedSale, setLastCompletedSale] = useState(null);
 
-  // Sauvegardes
+  // Sauvegardes persistantes
+  useEffect(() => {
+    localStorage.setItem('sp_base_amount', String(initialBaseAmount));
+  }, [initialBaseAmount]);
+
+  useEffect(() => {
+    localStorage.setItem('sp_base_count', String(initialBaseCount));
+  }, [initialBaseCount]);
+
   useEffect(() => {
     localStorage.setItem('sp_react_products', JSON.stringify(products));
   }, [products]);
 
   useEffect(() => {
-    localStorage.setItem('sp_react_sales', JSON.stringify(sales));
-  }, [sales]);
+    localStorage.setItem('sp_new_sales', JSON.stringify(newSales));
+  }, [newSales]);
 
   useEffect(() => {
     localStorage.setItem('sp_react_clients', JSON.stringify(clients));
@@ -203,27 +300,133 @@ export default function App() {
     localStorage.setItem('sp_theme', theme);
   }, [theme]);
 
+  // Sauvegardes de sécurité
+  useEffect(() => {
+    localStorage.setItem('sp_active_role', role);
+  }, [role]);
+
+  useEffect(() => {
+    localStorage.setItem('sp_role_permissions', JSON.stringify(permissions));
+  }, [permissions]);
+
+  useEffect(() => {
+    localStorage.setItem('sp_admin_pin', adminPin);
+  }, [adminPin]);
+
+  // Permissions actives pour le rôle courant
+  const currentPermissions = permissions[role] || DEFAULT_PERMISSIONS[role] || DEFAULT_PERMISSIONS.caissier;
+
+  // Redirection automatique si un rôle sans droit se trouve sur l'onglet Stock ou Rapports
+  useEffect(() => {
+    if (!currentPermissions.canViewStock && currentTab === 'stock') {
+      setCurrentTab('vente');
+      showToast('Accès restreint : le stock n\'est pas accessible aux caissiers.');
+    }
+    if (!currentPermissions.canViewReports && currentTab === 'reports') {
+      setCurrentTab('vente');
+      showToast('Accès restreint : les rapports ne sont pas accessibles aux caissiers.');
+    }
+  }, [role, permissions, currentTab]);
+
+  // Gestion du basculement sécurisé de rôle
+  const handleSelectRole = (targetRole) => {
+    if (targetRole === role) return;
+    if (targetRole === 'proprietaire') {
+      // Déverrouillage Administrateur requis par code PIN
+      setTargetRoleToUnlock('proprietaire');
+      setPinInput('');
+      setPinError('');
+      setShowPinModal(true);
+    } else {
+      setRole(targetRole);
+      showToast(`Profil activé : ${ROLES[targetRole].label}`);
+    }
+  };
+
+  const handleVerifyPin = () => {
+    if (pinInput === adminPin) {
+      setRole(targetRoleToUnlock || 'proprietaire');
+      setShowPinModal(false);
+      setPinInput('');
+      setPinError('');
+      showToast('Session Administrateur déverrouillée ✓');
+    } else {
+      setPinError('Code PIN incorrect (Code par défaut : 1234)');
+    }
+  };
+
+  // Délégation de permission : SEUL l'Administrateur peut déléguer !
+  const handleTogglePermission = (targetRole, permKey) => {
+    if (role !== 'proprietaire') {
+      showToast('Accès refusé : Seul l\'Administrateur peut déléguer les droits.');
+      return;
+    }
+    if (targetRole === 'proprietaire') {
+      showToast('Les privilèges Administrateur sont permanents.');
+      return;
+    }
+    setPermissions((prev) => ({
+      ...prev,
+      [targetRole]: {
+        ...prev[targetRole],
+        [permKey]: !prev[targetRole]?.[permKey]
+      }
+    }));
+    showToast(`Délégation modifiée pour ${ROLES[targetRole].label}`);
+  };
+
+  const handleResetPermissions = () => {
+    if (role !== 'proprietaire') return;
+    setPermissions(DEFAULT_PERMISSIONS);
+    showToast('Permissions rétablies aux valeurs par défaut ✓');
+  };
+
+  const handleChangePin = () => {
+    if (oldPinInput !== adminPin) {
+      setChangePinError('L\'ancien code PIN est incorrect.');
+      return;
+    }
+    if (newPinInput.length < 4) {
+      setChangePinError('Le nouveau code PIN doit comporter au moins 4 chiffres.');
+      return;
+    }
+    setAdminPin(newPinInput);
+    setShowChangePinModal(false);
+    setOldPinInput('');
+    setNewPinInput('');
+    setChangePinError('');
+    showToast('Code PIN Administrateur mis à jour ✓');
+  };
+
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 2500);
   };
 
-  // --- CALCUL EN DIRECT DES VENTES DU JOUR (COMMENCE À 0 FCFA) ---
-  const totalToday = useMemo(() => sales.reduce((sum, s) => sum + s.tot, 0), [sales]);
-  const salesCount = sales.length;
-  const avgBasket = salesCount ? Math.round(totalToday / salesCount) : 0;
+  // --- CUMUL TOTAL EN DIRECT : PRIX INITIAL DU DASHBOARD + TOUTES LES VENTES RÉCENTES ---
+  const newSalesSum = useMemo(() => newSales.reduce((acc, s) => acc + s.tot, 0), [newSales]);
+  const totalDashboardToday = initialBaseAmount + newSalesSum;
+  const totalSalesCountToday = initialBaseCount + newSales.length;
+  const avgBasket = totalSalesCountToday ? Math.round(totalDashboardToday / totalSalesCountToday) : 0;
 
-  // Répartition des paiements du jour (commence à 0)
+  // Répartition par mode de règlement
   const paymentBreakdown = useMemo(() => {
-    const res = { 'Espèces': 0, 'Flooz': 0, 'T-Money': 0 };
-    sales.forEach((s) => { res[s.pay] = (res[s.pay] || 0) + s.tot; });
+    // Répartition de base proportionnelle
+    const res = {
+      'Espèces': Math.round(initialBaseAmount * 0.52),
+      'Flooz': Math.round(initialBaseAmount * 0.30),
+      'T-Money': Math.round(initialBaseAmount * 0.18)
+    };
+    newSales.forEach((s) => {
+      res[s.pay] = (res[s.pay] || 0) + s.tot;
+    });
     return res;
-  }, [sales]);
+  }, [initialBaseAmount, newSales]);
 
-  // Graphique d'évolution des ventes réactif
+  // Graphique d'évolution réactif
   const chartPoints = useMemo(() => {
-    const data7 = [0, 0, 0, 0, 0, 0, totalToday];
-    const data30 = Array.from({ length: 30 }, (_, i) => (i === 29 ? totalToday : 0));
+    const data7 = [98000, 121000, 87000, 142000, 133000, 159000, totalDashboardToday];
+    const data30 = Array.from({ length: 30 }, (_, i) => (i === 29 ? totalDashboardToday : Math.round(90000 + Math.sin(i / 3) * 28000 + i * 2200)));
     const d = period === 7 ? data7 : data30;
     const max = Math.max(...d, 1000) * 1.15;
     const W = 460;
@@ -234,9 +437,9 @@ export default function App() {
     const last = pts[pts.length - 1];
     const totalP = d.reduce((a, b) => a + b, 0);
     return { pts, path, last, W, H, totalP, d };
-  }, [period, totalToday]);
+  }, [period, totalDashboardToday]);
 
-  // Panier
+  // Panier en cours
   const cartLines = useMemo(() => {
     return Object.keys(cart).map((id) => {
       const prod = products.find((p) => p.id === Number(id));
@@ -267,7 +470,7 @@ export default function App() {
     });
   };
 
-  // --- ENCAISSEMENT : AJOUT INSTANTANÉ AU TOTAL DU JOUR ---
+  // --- ENCAISSEMENT : AJOUT AUTOMATIQUE AU PRIX DU DASHBOARD ---
   const handleValidateSale = () => {
     if (!cartLines.length) return;
     const rcv = Number(receivedAmount) || 0;
@@ -289,7 +492,7 @@ export default function App() {
     );
 
     const now = new Date();
-    const no = `FAC-${String(sales.length + 1).padStart(4, '0')}`;
+    const no = `FAC-${String(initialBaseCount + newSales.length + 1).padStart(4, '0')}`;
     const newSale = {
       no,
       cl: client,
@@ -301,11 +504,12 @@ export default function App() {
       d: discountVal,
       rcv: paymentMethod === 'Espèces' ? rcv : totalToPay,
       chg: paymentMethod === 'Espèces' ? Math.max(0, rcv - totalToPay) : 0,
-      items: cartLines.map((l) => ({ n: l.n, p: l.p, q: l.qty }))
+      items: cartLines.map((l) => ({ n: l.n, p: l.p, q: l.qty })),
+      dashboardTotalAfter: totalDashboardToday + totalToPay // Enregistre le nouveau cumul exact
     };
 
-    // Le nouveau montant s'ajoute en direct aux Ventes du jour
-    setSales((prev) => [newSale, ...prev]);
+    // Ajout en tête de liste : incrémente immédiatement le dashboard
+    setNewSales((prev) => [newSale, ...prev]);
     setLastCompletedSale(newSale);
     setShowSaleModal(true);
     setCart({});
@@ -360,7 +564,7 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* HEADER FIXE PARTOUT : AFFICHE TOUJOURS LES VENTES DU JOUR EN DIRECT */}
+      {/* HEADER PRINCIPAL : AFFICHE LE PRIX TOTAL DU DASHBOARD EN TEMPS RÉEL */}
       <header>
         <div className="top">
           <div className="logo">
@@ -373,13 +577,16 @@ export default function App() {
             <span>{ROLES[role].label}</span>
             <button
               onClick={() => {
-                const next = role === 'caissier' ? 'gestionnaire' : role === 'gestionnaire' ? 'proprietaire' : 'caissier';
-                setRole(next);
-                showToast(`Profil : ${ROLES[next].label}`);
+                if (role === 'proprietaire') {
+                  setRole('caissier');
+                  showToast('Profil activé : Caissier');
+                } else {
+                  handleSelectRole('proprietaire');
+                }
               }}
-              title="Changer de profil"
+              title="Changer de profil ou déverrouiller Admin"
             >
-              Changer
+              {role === 'proprietaire' ? 'Mode Caissier' : 'Accès Admin'}
             </button>
           </div>
 
@@ -399,22 +606,20 @@ export default function App() {
           <ChevronRight size={15} />
         </div>
 
-        {/* COMPTEUR EN DIRECT DES VENTES DU JOUR */}
+        {/* PRIX DU DASHBOARD (VENTES DU JOUR) */}
         <div className="lbl">Ventes du jour (cumul en direct)</div>
         <div>
-          <span className="big">{hideAmounts ? '••••••' : fmt(totalToday)}</span>
+          <span className="big">{hideAmounts ? '••••••' : fmt(totalDashboardToday)}</span>
           <small className="big"><small> FCFA</small></small>
-          <span className="trend">
-            {salesCount === 0 ? '0 vente' : `${salesCount} vente${salesCount > 1 ? 's' : ''} réalisée${salesCount > 1 ? 's' : ''}`}
-          </span>
+          <span className="trend">▲ {totalSalesCountToday} ventes réalisées</span>
         </div>
 
-        <div style={{ marginTop: 10 }}>
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <span className="trial">Version v2.1 Sécurisée</span>
-          {ROLES[role].canClose && (
+          {currentPermissions.canClose && (
             <button
               className="trial"
-              style={{ marginLeft: 8, background: 'rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer' }}
+              style={{ background: 'rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer' }}
               onClick={() => setShowCloseModal(true)}
             >
               Clôturer la journée
@@ -432,8 +637,8 @@ export default function App() {
           <div className="dash-row-full">
             <div className="grid2">
               <div className="card kpi">
-                <div className="t">Ventes réalisées aujourd'hui</div>
-                <div className="v">{salesCount} <small>{salesCount > 1 ? 'ventes' : 'vente'}</small></div>
+                <div className="t">Ventes totales du jour</div>
+                <div className="v">{totalSalesCountToday} <small>ventes</small></div>
               </div>
               <div className="card kpi">
                 <div className="t">Panier moyen</div>
@@ -441,7 +646,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* RACCOURCIS PRO */}
+            {/* RACCOURCIS PRO (Le Stock n'apparaît pas pour le Caissier) */}
             <div className="card short">
               <button className="main pro-shortcut" onClick={() => setCurrentTab('vente')}>
                 <span className="shortcut-icon main-icon">
@@ -450,12 +655,14 @@ export default function App() {
                 <b>Vente</b>
               </button>
 
-              <button className="pro-shortcut" onClick={() => setCurrentTab('stock')}>
-                <span className="shortcut-icon">
-                  <PackagePlus size={22} strokeWidth={2.2} />
-                </span>
-                <b>Entrée</b>
-              </button>
+              {currentPermissions.canViewStock && (
+                <button className="pro-shortcut" onClick={() => setCurrentTab('stock')}>
+                  <span className="shortcut-icon">
+                    <PackagePlus size={22} strokeWidth={2.2} />
+                  </span>
+                  <b>Entrée</b>
+                </button>
+              )}
 
               <button className="pro-shortcut" onClick={() => showToast('Scanner code-barres / QR prêt')}>
                 <span className="shortcut-icon">
@@ -464,16 +671,18 @@ export default function App() {
                 <b>Scanner</b>
               </button>
 
-              <button className="pro-shortcut" onClick={() => setCurrentTab('stock')}>
-                <span className="shortcut-icon">
-                  <ClipboardList size={22} strokeWidth={2.2} />
-                </span>
-                <b>Inventaire</b>
-              </button>
+              {currentPermissions.canViewStock && (
+                <button className="pro-shortcut" onClick={() => setCurrentTab('stock')}>
+                  <span className="shortcut-icon">
+                    <ClipboardList size={22} strokeWidth={2.2} />
+                  </span>
+                  <b>Inventaire</b>
+                </button>
+              )}
             </div>
           </div>
 
-          {lowStockProducts.length > 0 && (
+          {currentPermissions.canViewStock && lowStockProducts.length > 0 && (
             <button className="alert dash-alert-full" onClick={() => setCurrentTab('stock')}>
               <AlertTriangle size={24} style={{ flexShrink: 0 }} />
               <span className="grow">
@@ -500,7 +709,7 @@ export default function App() {
                   </div>
                 </div>
                 <div style={{ color: 'var(--mute)', fontSize: 13, marginTop: 4 }}>
-                  Total cumulé : <b>{hideAmounts ? '••••••' : `${fmt(totalToday)} FCFA`}</b>
+                  Chiffre d'affaires cumulé : <b>{hideAmounts ? '••••••' : `${fmt(totalDashboardToday)} FCFA`}</b>
                 </div>
 
                 <div className="chart-container">
@@ -542,22 +751,23 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Dernières ventes avec bouton de téléchargement direct */}
+              {/* Dernières ventes avec bouton direct de téléchargement PDF */}
               <div className="card">
                 <div className="row">
-                  <h2>Dernières ventes ({salesCount})</h2>
+                  <h2>Dernières ventes récentes ({newSales.length})</h2>
                   <button onClick={() => setCurrentTab('reports')} style={{ color: 'var(--blue)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span>Historique</span>
                     <ChevronRight size={14} />
                   </button>
                 </div>
-                {sales.length === 0 ? (
+                {newSales.length === 0 ? (
                   <p style={{ color: 'var(--mute)', margin: '14px 0', fontSize: 13 }}>
-                    Aucune vente enregistrée pour le moment. Le total du jour est à <b>0 FCFA</b>.
+                    Chiffre d'affaires initial de départ : <b>{fmt(initialBaseAmount)} FCFA</b>.<br />
+                    Toutes vos nouvelles ventes s'ajouteront ici et s'additionneront en temps réel au dashboard !
                   </p>
                 ) : (
                   <ul className="list">
-                    {sales.slice(0, 5).map((s, idx) => (
+                    {newSales.slice(0, 6).map((s, idx) => (
                       <li key={idx}>
                         <span className="av"><Receipt size={18} /></span>
                         <div className="grow">
@@ -590,9 +800,9 @@ export default function App() {
                   <h2>Modes de paiement du jour</h2>
                 </div>
                 <div className="bar" style={{ height: 12, margin: '14px 0 10px' }}>
-                  <i style={{ width: `${totalToday ? (paymentBreakdown['Espèces'] / totalToday) * 100 : 0}%`, background: 'var(--blue)' }}></i>
-                  <i style={{ width: `${totalToday ? (paymentBreakdown['Flooz'] / totalToday) * 100 : 0}%`, background: 'var(--yellow)' }}></i>
-                  <i style={{ width: `${totalToday ? (paymentBreakdown['T-Money'] / totalToday) * 100 : 0}%`, background: '#f97316' }}></i>
+                  <i style={{ width: `${totalDashboardToday ? (paymentBreakdown['Espèces'] / totalDashboardToday) * 100 : 50}%`, background: 'var(--blue)' }}></i>
+                  <i style={{ width: `${totalDashboardToday ? (paymentBreakdown['Flooz'] / totalDashboardToday) * 100 : 30}%`, background: 'var(--yellow)' }}></i>
+                  <i style={{ width: `${totalDashboardToday ? (paymentBreakdown['T-Money'] / totalDashboardToday) * 100 : 20}%`, background: '#f97316' }}></i>
                 </div>
                 <div className="payment-list">
                   <div className="payment-row">
@@ -670,7 +880,11 @@ export default function App() {
                       <b>{p.n}</b>
                       <div className="prod-price">{fmt(p.p)} FCFA</div>
                       <div className="prod-stock" style={{ color: p.s <= p.min ? 'var(--bad)' : 'var(--mute)' }}>
-                        {p.s <= 0 ? 'Rupture' : `Stock : ${p.s}${cart[p.id] ? ` (${cart[p.id]})` : ''}`}
+                        {p.s <= 0
+                          ? 'Rupture'
+                          : currentPermissions.canViewStock
+                            ? `Stock : ${p.s}${cart[p.id] ? ` (${cart[p.id]})` : ''}`
+                            : cart[p.id] ? `Dans panier (${cart[p.id]})` : 'En rayon'}
                       </div>
                     </div>
                   </button>
@@ -816,9 +1030,9 @@ export default function App() {
       )}
 
       {/* =========================================================
-          VUE 3 : INVENTAIRE & STOCKS PLEINE LARGEUR
+          VUE 3 : INVENTAIRE & STOCKS PLEINE LARGEUR (Masqué pour le Caissier)
           ========================================================= */}
-      {currentTab === 'stock' && (
+      {currentTab === 'stock' && currentPermissions.canViewStock && (
         <main className="fullwidth-layout">
           <div className="card">
             <div className="row">
@@ -826,9 +1040,11 @@ export default function App() {
                 <h2>Inventaire des Produits</h2>
                 <span style={{ fontSize: 13, color: 'var(--mute)' }}>{products.length} articles en gestion</span>
               </div>
-              <button className="qb" onClick={() => setShowNewProd(!showNewProd)}>
-                {showNewProd ? 'Fermer' : '+ Nouveau produit'}
-              </button>
+              {currentPermissions.canEditStock && (
+                <button className="qb" onClick={() => setShowNewProd(!showNewProd)}>
+                  {showNewProd ? 'Fermer' : '+ Nouveau produit'}
+                </button>
+              )}
             </div>
 
             {showNewProd && (
@@ -895,7 +1111,7 @@ export default function App() {
                     </div>
 
                     <div className="stock-item-body">
-                      {ROLES[role].canViewBuy && (
+                      {currentPermissions.canViewBuy && (
                         <div className="stock-meta-row">
                           <span>Achat fournisseur :</span>
                           <b>{fmt(p.buy)} FCFA</b>
@@ -910,16 +1126,18 @@ export default function App() {
                         <i style={{ width: `${Math.min(100, (p.s / (p.min * 3)) * 100)}%`, background: isLow ? 'var(--bad)' : 'var(--blue)' }}></i>
                       </div>
 
-                      <button
-                        className="qb"
-                        style={{ width: '100%', padding: '9px 0', textAlign: 'center' }}
-                        onClick={() => {
-                          setProducts((prev) => prev.map((x) => x.id === p.id ? { ...x, s: x.s + 10 } : x));
-                          showToast(`+10 ${p.n} reçus en stock ✓`);
-                        }}
-                      >
-                        + Réceptionner 10 unités
-                      </button>
+                      {currentPermissions.canEditStock && (
+                        <button
+                          className="qb"
+                          style={{ width: '100%', padding: '9px 0', textAlign: 'center' }}
+                          onClick={() => {
+                            setProducts((prev) => prev.map((x) => x.id === p.id ? { ...x, s: x.s + 10 } : x));
+                            showToast(`+10 ${p.n} reçus en stock ✓`);
+                          }}
+                        >
+                          + Réceptionner 10 unités
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -930,33 +1148,33 @@ export default function App() {
       )}
 
       {/* =========================================================
-          VUE 4 : RAPPORTS ET CLÔTURES
+          VUE 4 : RAPPORTS ET CLÔTURES (Masqué si non autorisé)
           ========================================================= */}
-      {currentTab === 'reports' && (
+      {currentTab === 'reports' && currentPermissions.canViewReports && (
         <main className="fullwidth-layout">
           <div className="card">
             <h2>Synthèse Financière du Jour</h2>
             <div className="grid2" style={{ marginTop: 12 }}>
               <div className="card kpi" style={{ margin: 0 }}>
-                <div className="t">Chiffre d'affaires encaissé</div>
-                <div className="v">{fmt(totalToday)} <small>FCFA</small></div>
+                <div className="t">Chiffre d'affaires encaissé total</div>
+                <div className="v">{fmt(totalDashboardToday)} <small>FCFA</small></div>
               </div>
               <div className="card kpi" style={{ margin: 0 }}>
                 <div className="t">Transactions réalisées</div>
-                <div className="v">{salesCount} <small>tickets</small></div>
+                <div className="v">{totalSalesCountToday} <small>tickets</small></div>
               </div>
             </div>
           </div>
 
           <div className="card" style={{ marginTop: 14 }}>
-            <h2>Historique Complet des Ventes & Reçus</h2>
-            {sales.length === 0 ? (
+            <h2>Historique Complet des Ventes Récentes</h2>
+            {newSales.length === 0 ? (
               <p style={{ color: 'var(--mute)', margin: '14px 0', fontSize: 13 }}>
-                Aucune vente enregistrée aujourd'hui.
+                Aucune vente récente enregistrée. Total initial de départ : <b>{fmt(initialBaseAmount)} FCFA</b>.
               </p>
             ) : (
               <ul className="list">
-                {sales.map((s, idx) => (
+                {newSales.map((s, idx) => (
                   <li key={idx}>
                     <span className="av"><Receipt size={18} /></span>
                     <div className="grow">
@@ -1016,10 +1234,11 @@ export default function App() {
             </ul>
           </div>
 
+          {/* SÉLECTEUR DE PROFIL */}
           <div className="card" style={{ marginTop: 14 }}>
-            <h2>Contrôle des Profils & Autorisations</h2>
+            <h2>Changer de Profil Utilisateur</h2>
             <p style={{ fontSize: 13, color: 'var(--mute)', margin: '8px 0 14px' }}>
-              Profil utilisateur en cours d'utilisation : <b>{ROLES[role].label}</b>
+              Profil actif : <b>{ROLES[role].label}</b> ({ROLES[role].badge})
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
               {Object.keys(ROLES).map((k) => (
@@ -1029,18 +1248,195 @@ export default function App() {
                   style={{
                     padding: 12,
                     background: role === k ? 'var(--blue)' : 'var(--bg)',
-                    color: role === k ? '#fff' : 'var(--ink)'
+                    color: role === k ? '#fff' : 'var(--ink)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 4
                   }}
-                  onClick={() => {
-                    setRole(k);
-                    showToast(`Profil changé vers : ${ROLES[k].label}`);
-                  }}
+                  onClick={() => handleSelectRole(k)}
                 >
-                  {ROLES[k].label}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {k === 'proprietaire' && role !== 'proprietaire' && <Lock size={12} />}
+                    {k === 'proprietaire' && role === 'proprietaire' && <ShieldCheck size={12} />}
+                    <b>{ROLES[k].label}</b>
+                  </div>
+                  <span style={{ fontSize: 10, opacity: 0.8 }}>
+                    {k === 'caissier' ? 'Vente seule' : k === 'gestionnaire' ? 'Stock & Caisse' : 'Accès Total'}
+                  </span>
                 </button>
               ))}
             </div>
           </div>
+
+          {/* CENTRE DE DÉLÉGATION DES DROITS : RÉSERVÉ À L'ADMINISTRATEUR */}
+          {role === 'proprietaire' ? (
+            <div className="card" style={{ marginTop: 14 }}>
+              <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span className="av" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#059669' }}>
+                    <ShieldCheck size={20} />
+                  </span>
+                  <div>
+                    <h2 style={{ margin: 0 }}>Centre de Délégation des Droits</h2>
+                    <span style={{ fontSize: 13, color: 'var(--mute)' }}>
+                      En tant qu'Administrateur, vous décidez qui peut voir quoi dans l'application.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  className="qb"
+                  onClick={() => setShowChangePinModal(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                >
+                  <KeyRound size={14} />
+                  <span>Changer PIN Admin</span>
+                </button>
+              </div>
+
+              {/* SECTION RÔLE CAISSIER */}
+              <div className="perm-role-box">
+                <div className="perm-role-header">
+                  <div>
+                    <b style={{ fontSize: 15 }}>Rôle : {ROLES.caissier.label}</b>
+                    <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--mute)' }}>
+                      Le <b>STOCK</b> est masqué au caissier par défaut. Activez uniquement les droits délégués.
+                    </p>
+                  </div>
+                  <span className="tag" style={{ background: 'rgba(59, 130, 246, 0.1)', color: 'var(--blue)' }}>
+                    {Object.values(permissions.caissier || {}).filter(Boolean).length} droit(s) accordé(s)
+                  </span>
+                </div>
+
+                {PERMISSION_DEFINITIONS.map((perm) => {
+                  const isActive = !!permissions.caissier?.[perm.key];
+                  return (
+                    <div className="perm-row" key={perm.key}>
+                      <div className="perm-label-wrap">
+                        <b>{perm.label}</b>
+                        <span>{perm.desc}</span>
+                      </div>
+                      <button
+                        className={`perm-toggle-btn ${isActive ? 'active' : 'inactive'}`}
+                        onClick={() => handleTogglePermission('caissier', perm.key)}
+                        title="Cliquer pour autoriser ou révoquer"
+                      >
+                        {isActive ? <Check size={14} strokeWidth={2.5} /> : <X size={14} strokeWidth={2.5} />}
+                        <span>{isActive ? 'Autorisé' : 'Masqué / Bloqué'}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* SECTION RÔLE GESTIONNAIRE */}
+              <div className="perm-role-box" style={{ marginTop: 14 }}>
+                <div className="perm-role-header">
+                  <div>
+                    <b style={{ fontSize: 15 }}>Rôle : {ROLES.gestionnaire.label}</b>
+                    <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--mute)' }}>
+                      Gestion courante de boutique : stocks, inventaires, clôtures de caisse.
+                    </p>
+                  </div>
+                  <span className="tag ok">
+                    {Object.values(permissions.gestionnaire || {}).filter(Boolean).length} droit(s) accordé(s)
+                  </span>
+                </div>
+
+                {PERMISSION_DEFINITIONS.map((perm) => {
+                  const isActive = !!permissions.gestionnaire?.[perm.key];
+                  return (
+                    <div className="perm-row" key={perm.key}>
+                      <div className="perm-label-wrap">
+                        <b>{perm.label}</b>
+                        <span>{perm.desc}</span>
+                      </div>
+                      <button
+                        className={`perm-toggle-btn ${isActive ? 'active' : 'inactive'}`}
+                        onClick={() => handleTogglePermission('gestionnaire', perm.key)}
+                        title="Cliquer pour autoriser ou révoquer"
+                      >
+                        {isActive ? <Check size={14} strokeWidth={2.5} /> : <X size={14} strokeWidth={2.5} />}
+                        <span>{isActive ? 'Autorisé' : 'Masqué / Bloqué'}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button
+                  className="qb"
+                  onClick={handleResetPermissions}
+                  style={{ color: 'var(--mute)', fontSize: 12 }}
+                >
+                  Rétablir les permissions d'origine
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* PANNEAU VERROUILLÉ POUR NON-ADMIN (CAISSIER OU GESTIONNAIRE) */
+            <div className="card" style={{ marginTop: 14 }}>
+              <div className="admin-lock-banner">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#d97706', fontWeight: 700 }}>
+                  <Lock size={18} />
+                  <span>Délégation des Droits & Contrôle d'Accès Sécurisé</span>
+                </div>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', lineHeight: 1.5 }}>
+                  <b>Seul l'Administrateur peut déléguer qui peut voir quoi dans l'application.</b><br />
+                  Vous êtes actuellement connecté avec le profil : <b>{ROLES[role].label}</b>.
+                </p>
+              </div>
+
+              <h3 style={{ fontSize: 14, margin: '14px 0 8px' }}>Autorisations actives pour votre profil :</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {PERMISSION_DEFINITIONS.map((perm) => {
+                  const isGranted = !!currentPermissions[perm.key];
+                  return (
+                    <div
+                      key={perm.key}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 14px',
+                        background: 'var(--bg)',
+                        borderRadius: 10
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <b style={{ fontSize: 13, color: 'var(--ink)' }}>{perm.label}</b>
+                        <span style={{ fontSize: 11, color: 'var(--mute)' }}>{perm.desc}</span>
+                      </div>
+                      <span
+                        className={`tag ${isGranted ? 'ok' : 'bad'}`}
+                        style={{ fontSize: 11, padding: '4px 9px' }}
+                      >
+                        {isGranted ? '✓ Autorisé' : '✗ Masqué / Refusé'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                className="cta"
+                onClick={() => handleSelectRole('proprietaire')}
+                style={{
+                  marginTop: 16,
+                  padding: 12,
+                  fontSize: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8
+                }}
+              >
+                <KeyRound size={16} />
+                <span>Déverrouiller Administrateur avec le Code PIN</span>
+              </button>
+            </div>
+          )}
         </main>
       )}
 
@@ -1050,7 +1446,7 @@ export default function App() {
           <div className="card modal-content-wrap">
             <h2>Clôturer la journée ?</h2>
             <p style={{ margin: '14px 0', color: 'var(--mute)', fontSize: 14, lineHeight: 1.6 }}>
-              Total encaissé aujourd'hui : <b>{fmt(totalToday)} FCFA</b> ({salesCount} ventes).<br />
+              Total encaissé aujourd'hui : <b>{fmt(totalDashboardToday)} FCFA</b> ({totalSalesCountToday} ventes).<br />
               Toutes les transactions seront archivées dans l'historique et la caisse repartira à 0 FCFA.
             </p>
             <button
@@ -1058,10 +1454,12 @@ export default function App() {
               onClick={() => {
                 const now = new Date();
                 setClosedDays((prev) => [
-                  { date: now.toLocaleDateString('fr-FR'), tot: totalToday, n: salesCount, by: ROLES[role].label },
+                  { date: now.toLocaleDateString('fr-FR'), tot: totalDashboardToday, n: totalSalesCountToday, by: ROLES[role].label },
                   ...prev
                 ]);
-                setSales([]);
+                setInitialBaseAmount(0);
+                setInitialBaseCount(0);
+                setNewSales([]);
                 setShowCloseModal(false);
                 showToast('Journée clôturée et archivée avec succès ✓ Caisse remise à 0 FCFA');
               }}
@@ -1080,7 +1478,7 @@ export default function App() {
       )}
 
       {/* =========================================================
-          MODAL SUCCÈS VENTE — AVEC REDIRECTION ET ACTUALISATION DIRECTE
+          MODAL SUCCÈS VENTE — AVEC PRIX TOTAL DU DASHBOARD & REÇU DIRECT
           ========================================================= */}
       {showSaleModal && lastCompletedSale && (
         <div className="ov">
@@ -1088,6 +1486,7 @@ export default function App() {
             <div className="chk"><CheckCircle2 size={36} /></div>
             <h2>Paiement validé !</h2>
             
+            {/* RÉCAPITULATIF PRÉCIS DE LA VENTE */}
             <div style={{ margin: '14px 0', background: 'var(--bg)', padding: 14, borderRadius: 14, textAlign: 'left', fontSize: 13, lineHeight: 1.8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--mute)' }}>Référence :</span>
@@ -1102,8 +1501,8 @@ export default function App() {
                 <b>{lastCompletedSale.pay}</b>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--line)', marginTop: 8, paddingTop: 6 }}>
-                <span style={{ fontWeight: 700 }}>Total encaissé :</span>
-                <b style={{ color: 'var(--blue)', fontSize: 16 }}>{fmt(lastCompletedSale.tot)} FCFA</b>
+                <span style={{ fontWeight: 700 }}>Montant de cette vente :</span>
+                <b style={{ color: 'var(--blue)', fontSize: 16 }}>+{fmt(lastCompletedSale.tot)} FCFA</b>
               </div>
               {lastCompletedSale.pay === 'Espèces' && lastCompletedSale.chg > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--ok)' }}>
@@ -1113,7 +1512,16 @@ export default function App() {
               )}
             </div>
 
-            {/* BOUTON 1 : TÉLÉCHARGER LE REÇU CLIENT */}
+            {/* ENCART SPÉCIAL : NOUVEAU TOTAL DU DASHBOARD EN DIRECT */}
+            <div style={{ background: 'var(--okbg)', color: 'var(--ok)', padding: 12, borderRadius: 14, marginBottom: 12, textAlign: 'center' }}>
+              <span style={{ fontSize: 12, display: 'block', fontWeight: 600 }}>Nouveau total des ventes du jour sur le dashboard :</span>
+              <b style={{ fontSize: 20 }}>{fmt(totalDashboardToday)} FCFA</b>
+              <small style={{ display: 'block', fontSize: 11, marginTop: 2 }}>
+                ({fmt(initialBaseAmount)} initial + {fmt(newSalesSum)} nouvelles ventes)
+              </small>
+            </div>
+
+            {/* BOUTON 1 : TÉLÉCHARGER LE REÇU CLIENT DIRECTEMENT */}
             <button
               className="cta"
               style={{ background: 'var(--blue)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}
@@ -1123,23 +1531,24 @@ export default function App() {
               <span>Télécharger le reçu client (PDF)</span>
             </button>
 
-            {/* BOUTON 2 : NOUVELLE VENTE -> MET DIRECTEMENT LE COMPTEUR À JOUR SUR L'ACCUEIL */}
+            {/* BOUTON 2 : VOIR SUR LE DASHBOARD & NOUVELLE VENTE */}
             <button
               className="cta"
-              style={{ background: 'var(--yellow)', color: '#111', marginTop: 4 }}
+              style={{ background: 'var(--yellow)', color: '#111', marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
               onClick={() => {
                 setShowSaleModal(false);
-                setCurrentTab('accueil'); // Retour direct sur l'accueil pour voir immédiatement les ventes du jour et le montant cumulé !
-                showToast(`Total du jour actualisé : ${fmt(totalToday)} FCFA (${salesCount} ventes)`);
+                setCurrentTab('accueil'); // Bascule immédiatement vers l'accueil où le total est déjà actualisé !
+                showToast(`Dashboard actualisé : ${fmt(totalDashboardToday)} FCFA (${totalSalesCountToday} ventes)`);
               }}
             >
-              Voir le tableau de bord & Nouvelle vente
+              <span>Voir sur le Dashboard (+{fmt(lastCompletedSale.tot)} FCFA)</span>
+              <ArrowRight size={16} />
             </button>
           </div>
         </div>
       )}
 
-      {/* NAVIGATION PRINCIPALE */}
+      {/* NAVIGATION PRINCIPALE (Le Stock & Rapports sont masqués pour le Caissier) */}
       <nav aria-label="Navigation principale">
         <button
           aria-current={currentTab === 'accueil' ? 'page' : undefined}
@@ -1149,13 +1558,15 @@ export default function App() {
           <span>Accueil</span>
         </button>
 
-        <button
-          aria-current={currentTab === 'stock' ? 'page' : undefined}
-          onClick={() => setCurrentTab('stock')}
-        >
-          <Package size={20} />
-          <span>Stock</span>
-        </button>
+        {currentPermissions.canViewStock && (
+          <button
+            aria-current={currentTab === 'stock' ? 'page' : undefined}
+            onClick={() => setCurrentTab('stock')}
+          >
+            <Package size={20} />
+            <span>Stock</span>
+          </button>
+        )}
 
         <button
           className="sell"
@@ -1166,13 +1577,15 @@ export default function App() {
           <span>Vente</span>
         </button>
 
-        <button
-          aria-current={currentTab === 'reports' ? 'page' : undefined}
-          onClick={() => setCurrentTab('reports')}
-        >
-          <BarChart3 size={20} />
-          <span>Rapports</span>
-        </button>
+        {currentPermissions.canViewReports && (
+          <button
+            aria-current={currentTab === 'reports' ? 'page' : undefined}
+            onClick={() => setCurrentTab('reports')}
+          >
+            <BarChart3 size={20} />
+            <span>Rapports</span>
+          </button>
+        )}
 
         <button
           aria-current={currentTab === 'plus' ? 'page' : undefined}
@@ -1182,6 +1595,144 @@ export default function App() {
           <span>Plus</span>
         </button>
       </nav>
+
+      {/* MODAL SÉCURISÉ : SAISIE DU CODE PIN ADMINISTRATEUR */}
+      {showPinModal && (
+        <div className="ov">
+          <div className="card modal-content-wrap">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <span className="av" style={{ background: 'rgba(59, 130, 246, 0.15)', color: 'var(--blue)' }}>
+                <KeyRound size={22} />
+              </span>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 18 }}>Accès Administrateur</h2>
+                <span style={{ fontSize: 12, color: 'var(--mute)' }}>Authentification requise pour gérer les délégations</span>
+              </div>
+            </div>
+
+            <p style={{ fontSize: 13, color: 'var(--mute)', margin: '8px 0 16px', lineHeight: 1.5 }}>
+              Entrez le code PIN Administrateur pour modifier les autorisations et déléguer les droits d'accès.<br />
+              <small style={{ color: 'var(--blue)', fontWeight: 600 }}>Code PIN par défaut : 1234</small>
+            </p>
+
+            <input
+              type="password"
+              className="fld pin-input-large"
+              placeholder="••••"
+              maxLength={8}
+              autoFocus
+              value={pinInput}
+              onChange={(e) => {
+                setPinInput(e.target.value);
+                setPinError('');
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleVerifyPin();
+              }}
+            />
+
+            {pinError && (
+              <div style={{ color: 'var(--bad)', fontSize: 12, marginTop: 8, fontWeight: 600, textAlign: 'center' }}>
+                {pinError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button
+                className="qb"
+                style={{ flex: 1, padding: 12 }}
+                onClick={() => {
+                  setShowPinModal(false);
+                  setPinInput('');
+                  setPinError('');
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                className="cta"
+                style={{ flex: 1.5, padding: 12 }}
+                onClick={handleVerifyPin}
+              >
+                Déverrouiller
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL MODIFIER LE CODE PIN ADMINISTRATEUR */}
+      {showChangePinModal && (
+        <div className="ov">
+          <div className="card modal-content-wrap">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <span className="av" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#059669' }}>
+                <ShieldCheck size={22} />
+              </span>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 18 }}>Modifier le PIN Admin</h2>
+                <span style={{ fontSize: 12, color: 'var(--mute)' }}>Sécurisation du profil Administrateur</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--mute)', display: 'block', marginBottom: 4 }}>
+                  Ancien Code PIN (Actuel : {adminPin})
+                </label>
+                <input
+                  type="password"
+                  className="fld"
+                  placeholder="Ancien code PIN..."
+                  value={oldPinInput}
+                  onChange={(e) => setOldPinInput(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--mute)', display: 'block', marginBottom: 4 }}>
+                  Nouveau Code PIN (4 chiffres ou plus)
+                </label>
+                <input
+                  type="password"
+                  className="fld"
+                  placeholder="Nouveau code PIN..."
+                  value={newPinInput}
+                  onChange={(e) => setNewPinInput(e.target.value)}
+                />
+              </div>
+
+              {changePinError && (
+                <div style={{ color: 'var(--bad)', fontSize: 12, fontWeight: 600 }}>
+                  {changePinError}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button
+                className="qb"
+                style={{ flex: 1, padding: 12 }}
+                onClick={() => {
+                  setShowChangePinModal(false);
+                  setOldPinInput('');
+                  setNewPinInput('');
+                  setChangePinError('');
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                className="cta"
+                style={{ flex: 1.5, padding: 12 }}
+                onClick={handleChangePin}
+              >
+                Enregistrer le PIN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className={`toast ${toast ? 'on' : ''}`}>{toast}</div>
     </div>
