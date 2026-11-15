@@ -32,7 +32,11 @@ import {
   Unlock,
   KeyRound,
   Check,
-  X
+  X,
+  Briefcase,
+  Crown,
+  ChevronDown,
+  ArrowRightLeft
 } from 'lucide-react';
 import './App.css';
 
@@ -200,6 +204,9 @@ export default function App() {
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [targetRoleToUnlock, setTargetRoleToUnlock] = useState(null);
+
+  // Modal sélecteur de rôle responsive / mobile
+  const [showRoleModal, setShowRoleModal] = useState(false);
 
   const [showChangePinModal, setShowChangePinModal] = useState(false);
   const [oldPinInput, setOldPinInput] = useState('');
@@ -572,30 +579,70 @@ export default function App() {
             <span>StockPilot</span>
           </div>
 
-          <div className="user-badge">
-            <User size={13} />
-            <span>{ROLES[role].label}</span>
-            <button
-              onClick={() => {
-                if (role === 'proprietaire') {
-                  setRole('caissier');
-                  showToast('Profil activé : Caissier');
-                } else {
-                  handleSelectRole('proprietaire');
-                }
-              }}
-              title="Changer de profil ou déverrouiller Admin"
-            >
-              {role === 'proprietaire' ? 'Mode Caissier' : 'Accès Admin'}
+          <div className="header-actions">
+            <button className="ib" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Changer de thème">
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button className="ib" onClick={() => setHideAmounts(!hideAmounts)} aria-label="Masquer montants">
+              {hideAmounts ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
+        </div>
 
-          <button className="ib" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Changer de thème">
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+        {/* BARRE RESPONSIVE DU RÔLE / SÉLECTEUR RAPIDE (MOBILE FIRST) */}
+        <div className="header-role-bar">
+          <button
+            className={`role-badge-btn ${role}`}
+            onClick={() => setShowRoleModal(true)}
+            title="Changer de profil d'accès"
+          >
+            <span className="role-icon-wrap">
+              {role === 'proprietaire' && <Crown size={15} />}
+              {role === 'gestionnaire' && <Briefcase size={15} />}
+              {role === 'caissier' && <User size={15} />}
+            </span>
+            <span className="role-text-wrap">
+              <span className="role-small-title">Profil actif</span>
+              <span className="role-main-name">{ROLES[role].label}</span>
+            </span>
+            <ChevronDown size={14} className="role-chevron" />
           </button>
-          <button className="ib" onClick={() => setHideAmounts(!hideAmounts)} aria-label="Masquer montants">
-            {hideAmounts ? <EyeOff size={18} /> : <Eye size={18} />}
-          </button>
+
+          {/* BOUTON RAPIDE RESPONSIVE POUR BASCULER ENTRE ADMIN ET GESTIONNAIRE */}
+          {role === 'proprietaire' ? (
+            <button
+              className="role-quick-switch-btn gestionnaire-switch"
+              onClick={() => {
+                setRole('gestionnaire');
+                showToast('Profil activé : Gestionnaire (Accès Stocks & Gestion) ✓');
+              }}
+              title="Passer directement en profil Gestionnaire"
+            >
+              <Briefcase size={14} />
+              <span>Passer Gestionnaire</span>
+            </button>
+          ) : role === 'gestionnaire' ? (
+            <button
+              className="role-quick-switch-btn admin-switch"
+              onClick={() => handleSelectRole('proprietaire')}
+              title="Passer en profil Administrateur (PIN)"
+            >
+              <Crown size={14} />
+              <span>Passer Admin</span>
+            </button>
+          ) : (
+            <button
+              className="role-quick-switch-btn gestionnaire-switch"
+              onClick={() => {
+                setRole('gestionnaire');
+                showToast('Profil activé : Gestionnaire (Accès Stocks) ✓');
+              }}
+              title="Passer en profil Gestionnaire"
+            >
+              <Briefcase size={14} />
+              <span>Passer Gestionnaire</span>
+            </button>
+          )}
         </div>
 
         <div className="shop">
@@ -1595,6 +1642,110 @@ export default function App() {
           <span>Plus</span>
         </button>
       </nav>
+
+      {/* MODAL SÉLECTEUR DE PROFIL RESPONSIVE & MOBILE-FIRST */}
+      {showRoleModal && (
+        <div className="ov">
+          <div className="card modal-content-wrap role-modal-mobile">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span className="av" style={{ background: 'rgba(59, 130, 246, 0.15)', color: 'var(--blue)' }}>
+                  <ArrowRightLeft size={20} />
+                </span>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 18 }}>Changer de Profil</h2>
+                  <span style={{ fontSize: 12, color: 'var(--mute)' }}>Basculez entre Gestionnaire, Admin et Caissier</span>
+                </div>
+              </div>
+              <button
+                className="ib"
+                style={{ background: 'var(--bg)', color: 'var(--ink)' }}
+                onClick={() => setShowRoleModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="role-options-list">
+              {/* CARTE GESTIONNAIRE */}
+              <button
+                className={`role-option-card ${role === 'gestionnaire' ? 'selected' : ''}`}
+                onClick={() => {
+                  setRole('gestionnaire');
+                  setShowRoleModal(false);
+                  showToast('Profil activé : Gestionnaire (Accès Stocks, Réassorts & Clôtures) ✓');
+                }}
+              >
+                <div className="role-opt-icon gestionnaire-icon">
+                  <Briefcase size={22} />
+                </div>
+                <div className="role-opt-info">
+                  <div className="role-opt-header">
+                    <b>Gestionnaire</b>
+                    {role === 'gestionnaire' && <span className="tag ok">Actif</span>}
+                  </div>
+                  <p>Accès complet aux Stocks, Réassorts, Inventaire, Rapports et Clôtures de caisse.</p>
+                </div>
+              </button>
+
+              {/* CARTE ADMINISTRATEUR */}
+              <button
+                className={`role-option-card ${role === 'proprietaire' ? 'selected' : ''}`}
+                onClick={() => {
+                  setShowRoleModal(false);
+                  handleSelectRole('proprietaire');
+                }}
+              >
+                <div className="role-opt-icon admin-icon">
+                  <Crown size={22} />
+                </div>
+                <div className="role-opt-info">
+                  <div className="role-opt-header">
+                    <b>Administrateur</b>
+                    {role === 'proprietaire' ? (
+                      <span className="tag ok">Actif</span>
+                    ) : (
+                      <span className="tag" style={{ background: 'rgba(217, 119, 6, 0.15)', color: '#d97706' }}>
+                        <Lock size={10} style={{ marginRight: 3 }} /> PIN Requis
+                      </span>
+                    )}
+                  </div>
+                  <p>Contrôle total, délégation exclusive des droits, marges et configuration du magasin.</p>
+                </div>
+              </button>
+
+              {/* CARTE CAISSIER */}
+              <button
+                className={`role-option-card ${role === 'caissier' ? 'selected' : ''}`}
+                onClick={() => {
+                  setRole('caissier');
+                  setShowRoleModal(false);
+                  showToast('Profil activé : Caissier (Ventes & Caisse, Stock masqué)');
+                }}
+              >
+                <div className="role-opt-icon caissier-icon">
+                  <User size={22} />
+                </div>
+                <div className="role-opt-info">
+                  <div className="role-opt-header">
+                    <b>Caissier</b>
+                    {role === 'caissier' && <span className="tag ok">Actif</span>}
+                  </div>
+                  <p>Vente au comptoir et encaissement. Le Stock et les Rapports restent masqués.</p>
+                </div>
+              </button>
+            </div>
+
+            <button
+              className="qb"
+              style={{ width: '100%', marginTop: 14, padding: 12, textAlign: 'center' }}
+              onClick={() => setShowRoleModal(false)}
+            >
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* MODAL SÉCURISÉ : SAISIE DU CODE PIN ADMINISTRATEUR */}
       {showPinModal && (
