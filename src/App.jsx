@@ -39,10 +39,13 @@ import {
   Crown,
   ChevronDown,
   ArrowRightLeft,
-  Database
+  Database,
+  LogOut
 } from 'lucide-react';
 import './App.css';
 import { supabase } from './lib/supabase';
+import AuthPage from './pages/AuthPage';
+import './pages/AuthPage.css';
 
 // --- UTILITAIRES DE FORMATAGE ---
 const fmt = (n) => Number(n || 0).toLocaleString('fr-FR');
@@ -181,6 +184,33 @@ function downloadReceipt(sale, notify) {
 }
 
 export default function App() {
+  // --- AUTHENTIFICATION SUPABASE ---
+  // null = pas encore vérifié, false = non connecté, objet = session active
+  const [supabaseSession, setSupabaseSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    // Récupère la session courante au démarrage
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSupabaseSession(session);
+      setAuthLoading(false);
+    });
+
+    // Écoute les changements d'état d'authentification (connexion, déconnexion, refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSupabaseSession(session);
+      setAuthLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Déconnexion sécurisée
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    // onAuthStateChange mettra supabaseSession à null automatiquement
+  };
+
   const [theme, setTheme] = useState(() => localStorage.getItem('sp_theme') || 'light');
   const [hideAmounts, setHideAmounts] = useState(false);
   const [currentTab, setCurrentTab] = useState('accueil');
@@ -777,6 +807,43 @@ export default function App() {
 
   const lowStockProducts = products.filter((p) => p.s <= p.min);
 
+  // --- RENDU CONDITIONNEL : AUTH ou APP ---
+  // Pendant la vérification de session, on affiche un écran de chargement
+  if (authLoading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: '#0d1117',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'column',
+        gap: '1rem'
+      }}>
+        <div style={{
+          width: 48, height: 48,
+          background: 'linear-gradient(135deg, #4ddc17, #3ab510)',
+          borderRadius: 14,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <rect x="2" y="7" width="20" height="14" rx="2" fill="white" opacity="0.3"/>
+            <path d="M8 7V5a4 4 0 0 1 8 0v2" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+            <path d="M12 12v4m-2-2h4" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </div>
+        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.9rem', margin: 0 }}>
+          Chargement de StockPilot…
+        </p>
+      </div>
+    );
+  }
+
+  // Si pas de session active → afficher la page d'authentification
+  if (!supabaseSession) {
+    return <AuthPage onAuthSuccess={(session) => setSupabaseSession(session)} />;
+  }
+
   return (
     <div className="app">
       {/* HEADER PRINCIPAL : STYLE FIDÈLE À LA MAQUETTE */}
@@ -807,6 +874,16 @@ export default function App() {
             <button className="ib" onClick={() => showToast('Aucune nouvelle notification')} aria-label="Notifications">
               <Bell size={18} />
               <span className="dot"></span>
+            </button>
+            {/* Bouton de déconnexion */}
+            <button
+              className="ib"
+              onClick={handleSignOut}
+              aria-label="Se déconnecter"
+              title={`Déconnecter (${supabaseSession?.user?.email || ''})`}
+              style={{ color: 'rgba(239,68,68,0.8)' }}
+            >
+              <LogOut size={18} />
             </button>
           </div>
         </div>
