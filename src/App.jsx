@@ -26,6 +26,8 @@ import {
   Share2,
   ArrowLeft,
   ArrowRight,
+  ArrowDown,
+  Bell,
   Shield,
   ShieldCheck,
   Lock,
@@ -36,9 +38,11 @@ import {
   Briefcase,
   Crown,
   ChevronDown,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Database
 } from 'lucide-react';
 import './App.css';
+import { supabase } from './lib/supabase';
 
 // --- UTILITAIRES DE FORMATAGE ---
 const fmt = (n) => Number(n || 0).toLocaleString('fr-FR');
@@ -208,6 +212,7 @@ export default function App() {
   // Modal sélecteur de rôle responsive / mobile
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showScannerModal, setShowScannerModal] = useState(false);
+  const [dbStatus, setDbStatus] = useState('connecting'); // 'connected' | 'offline' | 'connecting'
 
   const [showChangePinModal, setShowChangePinModal] = useState(false);
   const [oldPinInput, setOldPinInput] = useState('');
@@ -278,6 +283,41 @@ export default function App() {
   const [showSaleModal, setShowSaleModal] = useState(false);
   const [lastCompletedSale, setLastCompletedSale] = useState(null);
 
+  // --- BOUTIQUES & MULTI-MAGASINS ---
+  const [shops, setShops] = useState(() => {
+    const saved = localStorage.getItem('sp_shops');
+    return saved ? JSON.parse(saved) : [
+      { co: 'Boutique Centrale', st: ['Magasin principal', 'Dépôt Lomé'] },
+      { co: 'Épicerie Mawuli', st: ['Magasin Kara', 'Magasin Atakpamé'] }
+    ];
+  });
+
+  const [currentShop, setCurrentShop] = useState(() => {
+    const saved = localStorage.getItem('sp_current_shop');
+    return saved ? JSON.parse(saved) : { co: 'Boutique Centrale', st: 'Magasin principal' };
+  });
+
+  const [showShopModal, setShowShopModal] = useState(false);
+  const [showAddShopForm, setShowAddShopForm] = useState(false);
+  const [newShopType, setNewShopType] = useState('Magasin');
+  const [newShopName, setNewShopName] = useState('');
+  const [newShopCompany, setNewShopCompany] = useState('Boutique Centrale');
+
+  // --- RÉCEPTION LIBRE DE STOCK (NON LIMITÉE À 10) ---
+  const [restockQtyInputs, setRestockQtyInputs] = useState({});
+  const [showRestockModal, setShowRestockModal] = useState(false);
+  const [modalRestockProduct, setModalRestockProduct] = useState(1);
+  const [modalRestockQty, setModalRestockQty] = useState('');
+
+  // Sauvegardes persistantes
+  useEffect(() => {
+    localStorage.setItem('sp_shops', JSON.stringify(shops));
+  }, [shops]);
+
+  useEffect(() => {
+    localStorage.setItem('sp_current_shop', JSON.stringify(currentShop));
+  }, [currentShop]);
+
   // Sauvegardes persistantes
   useEffect(() => {
     localStorage.setItem('sp_base_amount', String(initialBaseAmount));
@@ -307,6 +347,71 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('sp_theme', theme);
   }, [theme]);
+
+  // --- SYNCHRONISATION SUPABASE (DONNÉES EN DIRECT + FALLBACK LOCAL) ---
+  useEffect(() => {
+    let isMounted = true;
+
+    async function syncWithSupabase() {
+      try {
+        // 1. Charger les produits depuis Supabase
+        const { data: prodData, error: prodErr } = await supabase
+          .from('products')
+          .select('*')
+          .order('id', { ascending: true });
+
+        if (!prodErr && prodData && prodData.length > 0 && isMounted) {
+          setProducts(prodData);
+          setDbStatus('connected');
+        } else if (prodErr) {
+          if (isMounted) setDbStatus('offline');
+        }
+
+        // 2. Charger les clients
+        const { data: clientData, error: clientErr } = await supabase
+          .from('clients')
+          .select('*');
+
+        if (!clientErr && clientData && clientData.length > 0 && isMounted) {
+          setClients(clientData);
+        }
+
+        // 3. Charger les ventes récentes
+        const { data: salesData, error: salesErr } = await supabase
+          .from('sales')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (!salesErr && salesData && salesData.length > 0 && isMounted) {
+          const formatted = salesData.map((s) => ({
+            no: s.ticket_no,
+            cl: s.client_name,
+            t: s.time,
+            date: s.date,
+            pay: s.payment_method,
+            tot: Number(s.total),
+            sub: Number(s.subtotal),
+            d: Number(s.discount),
+            rcv: Number(s.amount_received),
+            chg: Number(s.change_returned),
+            items: s.items || [],
+            dashboardTotalAfter: Number(s.dashboard_total_after)
+          }));
+          setNewSales(formatted);
+          if (isMounted) setDbStatus('connected');
+        }
+      } catch (e) {
+        if (isMounted) setDbStatus('offline');
+      }
+    }
+
+    syncWithSupabase();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Sauvegardes de sécurité
   useEffect(() => {
@@ -524,6 +629,34 @@ export default function App() {
     setDiscount('');
     setReceivedAmount('');
     showToast(`Vente validée ! +${fmt(totalToPay)} FCFA ajoutés aux ventes du jour ✓`);
+
+    // Synchronisation automatique de la vente dans Supabase
+    supabase.from('sales').insert({
+      ticket_no: no,
+      client_name: client,
+      time: newSale.t,
+      date: newSale.date,
+      payment_method: paymentMethod,
+      total: totalToPay,
+      subtotal: subtotal,
+      discount: discountVal,
+      amount_received: newSale.rcv,
+      change_returned: newSale.chg,
+      dashboard_total_after: newSale.dashboardTotalAfter,
+      cashier: ROLES[role]?.label || role,
+      items: newSale.items
+    }).then(({ error }) => {
+      if (!error) setDbStatus('connected');
+    });
+
+    // Mise à jour des stocks décrémentés dans Supabase
+    cartLines.forEach((l) => {
+      const prod = products.find((p) => p.id === l.id);
+      if (prod) {
+        const remaining = Math.max(0, prod.s - l.qty);
+        supabase.from('products').update({ s: remaining }).eq('id', l.id).then();
+      }
+    });
   };
 
   const handleAddProduct = () => {
@@ -547,6 +680,18 @@ export default function App() {
       { id: newId, n: newProdName.trim(), p: pSell, buy: pBuy, s: pStock, min: pMin }
     ]);
 
+    // Enregistrement du produit dans Supabase
+    supabase.from('products').insert({
+      id: newId,
+      n: newProdName.trim(),
+      p: pSell,
+      buy: pBuy,
+      s: pStock,
+      min: pMin
+    }).then(({ error }) => {
+      if (!error) setDbStatus('connected');
+    });
+
     setNewProdName('');
     setNewProdBuy('');
     setNewProdSell('');
@@ -560,23 +705,95 @@ export default function App() {
       showToast('Le nom du client est requis');
       return;
     }
-    setClients((prev) => [...prev, { n: newClientName.trim(), tel: newClientTel.trim() }]);
+    const newClientObj = { n: newClientName.trim(), tel: newClientTel.trim() };
+    setClients((prev) => [...prev, newClientObj]);
     setClient(newClientName.trim());
+
+    // Enregistrement du client dans Supabase
+    supabase.from('clients').insert(newClientObj).then(({ error }) => {
+      if (!error) setDbStatus('connected');
+    });
+
     setNewClientName('');
     setNewClientTel('');
     setShowNewClientForm(false);
     showToast('Client enregistré ✓');
   };
 
+  const handleSelectShop = (co, st) => {
+    setCurrentShop({ co, st });
+    setShowShopModal(false);
+    showToast(`Magasin actif : ${st} (${co}) ✓`);
+  };
+
+  const handleAddShop = (e) => {
+    if (e) e.preventDefault();
+    let name = newShopName.trim();
+    if (!name) {
+      showToast('Saisissez le nom du magasin ou de la boutique');
+      return;
+    }
+    if (name.toLowerCase().startsWith(newShopType.toLowerCase() + ' ')) {
+      name = name.slice(newShopType.length + 1).trim();
+    }
+    const fullName = `${newShopType} ${name}`;
+
+    setShops((prev) => {
+      const exists = prev.find((s) => s.co === newShopCompany);
+      if (exists) {
+        if (exists.st.some((item) => item.toLowerCase() === fullName.toLowerCase())) {
+          showToast('Ce point de vente existe déjà');
+          return prev;
+        }
+        return prev.map((s) => s.co === newShopCompany ? { ...s, st: [...s.st, fullName] } : s);
+      } else {
+        return [...prev, { co: newShopCompany, st: [fullName] }];
+      }
+    });
+
+    setCurrentShop({ co: newShopCompany, st: fullName });
+    setNewShopName('');
+    setShowAddShopForm(false);
+    setShowShopModal(false);
+    showToast(`${fullName} ajouté à ${newShopCompany} ✓`);
+  };
+
+  const handleReceiveStock = (productId, qtyToReceive) => {
+    const qty = parseInt(qtyToReceive, 10);
+    if (!qty || isNaN(qty) || qty <= 0) {
+      showToast('Veuillez saisir une quantité valide à réceptionner (ex: 20, 50)');
+      return;
+    }
+    const product = products.find((p) => p.id === productId);
+    if (!product) return;
+
+    const newQty = product.s + qty;
+    setProducts((prev) => prev.map((x) => x.id === productId ? { ...x, s: newQty } : x));
+    supabase.from('products').update({ s: newQty }).eq('id', productId).then();
+
+    setRestockQtyInputs((prev) => ({ ...prev, [productId]: '' }));
+    showToast(`+${qty} ${product.n} réceptionné(s) en stock ✓`);
+  };
+
   const lowStockProducts = products.filter((p) => p.s <= p.min);
 
   return (
     <div className="app">
-      {/* HEADER PRINCIPAL : AFFICHE LE PRIX TOTAL DU DASHBOARD EN TEMPS RÉEL */}
-      <header>
+      {/* HEADER PRINCIPAL : STYLE FIDÈLE À LA MAQUETTE */}
+      <header id="dh">
         <div className="top">
-          <div className="logo">
-            <span className="logo-badge"><TrendingUp size={18} strokeWidth={2.6} /></span>
+          <div
+            className="logo"
+            onClick={() => setCurrentTab('accueil')}
+            style={{ cursor: 'pointer' }}
+            title="Retour à l'accueil"
+          >
+            <i>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 8 12 3 3 8v8l9 5 9-5z"/>
+                <path d="m3 8 9 5 9-5M12 13v8"/>
+              </svg>
+            </i>
             <span>StockPilot</span>
           </div>
 
@@ -587,91 +804,60 @@ export default function App() {
             <button className="ib" onClick={() => setHideAmounts(!hideAmounts)} aria-label="Masquer montants">
               {hideAmounts ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
+            <button className="ib" onClick={() => showToast('Aucune nouvelle notification')} aria-label="Notifications">
+              <Bell size={18} />
+              <span className="dot"></span>
+            </button>
           </div>
         </div>
 
-        {/* BARRE RESPONSIVE DU RÔLE / SÉLECTEUR RAPIDE (MOBILE FIRST) */}
-        <div className="header-role-bar">
+        {/* LIGNE BOUTIQUE & ADMIN (CHANGER OU AJOUTER UNE BOUTIQUE) */}
+        <div id="modeWrap" style={{ display: 'flex', gap: 8, marginTop: 14 }}>
           <button
-            className={`role-badge-btn ${role}`}
-            onClick={() => setShowRoleModal(true)}
-            title="Changer de profil d'accès"
+            className="shop"
+            id="shop"
+            onClick={() => {
+              setShowAddShopForm(false);
+              setShowShopModal(true);
+            }}
+            title="Changer de boutique ou ajouter un magasin"
           >
-            <span className="role-icon-wrap">
-              {role === 'proprietaire' && <Crown size={15} />}
-              {role === 'gestionnaire' && <Briefcase size={15} />}
-              {role === 'caissier' && <User size={15} />}
-            </span>
-            <span className="role-text-wrap">
-              <span className="role-small-title">Profil actif</span>
-              <span className="role-main-name">{ROLES[role].label}</span>
-            </span>
-            <ChevronDown size={14} className="role-chevron" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <Store size={16} />
+              <span>{currentShop.co} · {currentShop.st}</span>
+            </div>
+            <span style={{ opacity: 0.8 }}>▾</span>
           </button>
-
-          {/* BOUTON RAPIDE RESPONSIVE POUR BASCULER ENTRE ADMIN ET GESTIONNAIRE */}
-          {role === 'proprietaire' ? (
-            <button
-              className="role-quick-switch-btn gestionnaire-switch"
-              onClick={() => {
-                setRole('gestionnaire');
-                showToast('Profil activé : Gestionnaire (Accès Stocks & Gestion) ✓');
-              }}
-              title="Passer directement en profil Gestionnaire"
-            >
-              <Briefcase size={14} />
-              <span>Passer Gestionnaire</span>
-            </button>
-          ) : role === 'gestionnaire' ? (
-            <button
-              className="role-quick-switch-btn admin-switch"
-              onClick={() => handleSelectRole('proprietaire')}
-              title="Passer en profil Administrateur (PIN)"
-            >
-              <Crown size={14} />
-              <span>Passer Admin</span>
-            </button>
-          ) : (
-            <button
-              className="role-quick-switch-btn gestionnaire-switch"
-              onClick={() => {
-                setRole('gestionnaire');
-                showToast('Profil activé : Gestionnaire (Accès Stocks) ✓');
-              }}
-              title="Passer en profil Gestionnaire"
-            >
-              <Briefcase size={14} />
-              <span>Passer Gestionnaire</span>
-            </button>
-          )}
-        </div>
-
-        <div className="shop">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            <Store size={15} />
-            <span>Boutique Centrale · Magasin principal</span>
-          </div>
-          <ChevronRight size={15} />
+          <button className="shop" id="modeB" onClick={() => setShowRoleModal(true)} title="Changer de profil ou code PIN">
+            <Shield size={16} />
+            <span>{role === 'proprietaire' ? 'Admin' : role === 'gestionnaire' ? 'Gest.' : 'Caissier'}</span>
+          </button>
         </div>
 
         {/* PRIX DU DASHBOARD (VENTES DU JOUR) */}
-        <div className="lbl">Ventes du jour (cumul en direct)</div>
+        <div className="lbl" id="dl">Ventes du jour · {new Date().toLocaleDateString('fr-FR')}</div>
         <div>
-          <span className="big">{hideAmounts ? '••••••' : fmt(totalDashboardToday)}</span>
-          <small className="big"><small> FCFA</small></small>
-          <span className="trend">▲ {totalSalesCountToday} ventes réalisées</span>
+          <span className="big" id="hT">{hideAmounts ? '••••••' : fmt(totalDashboardToday)}</span>{' '}
+          <small className="big"><small>FCFA</small></small>
+          <span className="trend" id="trd">▲ 12 % vs hier</span>
         </div>
 
-        <div className="header-meta-actions">
-          <span className="trial-badge">StockPilot v2.1 Sécurisé</span>
+        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+          <span className="trial">Essai gratuit · 14 jours restants</span>
           {currentPermissions.canClose && (
             <button
-              className="close-day-btn"
+              className="trial"
+              id="closeDay"
+              style={{
+                border: 0,
+                cursor: 'pointer',
+                background: 'rgba(255, 255, 255, 0.2)',
+                color: '#fff'
+              }}
               onClick={() => setShowCloseModal(true)}
               title="Clôturer la journée de caisse"
             >
-              <Receipt size={13} />
-              <span>Clôturer la journée</span>
+              Clôturer la journée
             </button>
           )}
         </div>
@@ -682,244 +868,232 @@ export default function App() {
           ========================================================= */}
       {currentTab === 'accueil' && (
         <main className="dashboard-grid">
-          {/* Ligne 1 : KPI & Raccourcis Pro */}
-          <div className="dash-row-full">
-            <div className="grid2">
-              <div className="card kpi">
-                <div className="t">Ventes totales du jour</div>
-                <div className="v">{totalSalesCountToday} <small>ventes</small></div>
-              </div>
-              <div className="card kpi">
-                <div className="t">Panier moyen</div>
-                <div className="v">{hideAmounts ? '••••' : fmt(avgBasket)} <small>FCFA</small></div>
-              </div>
+          {/* Ligne 1 : KPI */}
+          <div className="grid2">
+            <div className="card kpi">
+              <div className="t">Ventes réalisées</div>
+              <div className="v">{totalSalesCountToday} <small>aujourd’hui</small></div>
             </div>
-
-            {/* RACCOURCIS PRO REPOSITIONNÉS ET RESPONSIVES (MOBILE-FIRST) */}
-            <div className="card short">
-              {/* BOUTON 1 : VENTE / CAISSE */}
-              <button
-                className="pro-shortcut main"
-                onClick={() => setCurrentTab('vente')}
-                title="Accéder immédiatement à la caisse et vente"
-              >
-                <span className="shortcut-icon main-icon">
-                  <ShoppingCart size={22} strokeWidth={2.4} />
-                </span>
-                <span className="shortcut-label-group">
-                  <b>Caisse / Vente</b>
-                  <span>Encaisser client</span>
-                </span>
-              </button>
-
-              {/* BOUTON 2 : SCANNER ARTICLES */}
-              <button
-                className="pro-shortcut scanner-btn"
-                onClick={() => setShowScannerModal(true)}
-                title="Ouvrir le scanner de code-barres / QR"
-              >
-                <span className="shortcut-icon">
-                  <ScanBarcode size={22} strokeWidth={2.4} />
-                </span>
-                <span className="shortcut-label-group">
-                  <b>Scanner</b>
-                  <span>Code-barres / QR</span>
-                </span>
-              </button>
-
-              {/* BOUTON 3 : ENTRÉE STOCK (AUTORISÉ GESTIONNAIRE / ADMIN) */}
-              {currentPermissions.canViewStock && (
-                <button
-                  className="pro-shortcut"
-                  onClick={() => setCurrentTab('stock')}
-                  title="Réceptionner des marchandises"
-                >
-                  <span className="shortcut-icon" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#059669' }}>
-                    <PackagePlus size={22} strokeWidth={2.4} />
-                  </span>
-                  <span className="shortcut-label-group">
-                    <b>Entrée Stock</b>
-                    <span>Réceptionner</span>
-                  </span>
-                </button>
-              )}
-
-              {/* BOUTON 4 : INVENTAIRE (AUTORISÉ GESTIONNAIRE / ADMIN) */}
-              {currentPermissions.canViewStock && (
-                <button
-                  className="pro-shortcut"
-                  onClick={() => setCurrentTab('stock')}
-                  title="Consulter l'inventaire complet"
-                >
-                  <span className="shortcut-icon" style={{ background: 'rgba(139, 92, 246, 0.12)', color: '#7c3aed' }}>
-                    <ClipboardList size={22} strokeWidth={2.4} />
-                  </span>
-                  <span className="shortcut-label-group">
-                    <b>Inventaire</b>
-                    <span>Comptage & état</span>
-                  </span>
-                </button>
-              )}
+            <div className="card kpi">
+              <div className="t">Panier moyen</div>
+              <div className="v">{hideAmounts ? '••••' : fmt(avgBasket)} <small>FCFA</small></div>
             </div>
           </div>
 
-          {currentPermissions.canViewStock && lowStockProducts.length > 0 && (
-            <button className="alert dash-alert-full" onClick={() => setCurrentTab('stock')}>
-              <AlertTriangle size={24} style={{ flexShrink: 0 }} />
-              <span className="grow">
-                <span>{lowStockProducts.length} produit(s) sous le seuil d'alerte</span><br />
-                <span style={{ fontWeight: 400, fontSize: 13 }}>
-                  {lowStockProducts.map((p) => p.n).join(', ')} — Cliquez pour réapprovisionner
-                </span>
-              </span>
-              <ChevronRight size={18} />
+          {/* RACCOURCIS EXACTEMENT COMME SUR L'IMAGE (4 BOUTONS CARRES) */}
+          <div className="card short">
+            <button className="main" onClick={() => setCurrentTab('vente')} title="Vente / Caisse">
+              <span><ShoppingCart size={22} strokeWidth={2.4} /></span>
+              Vente
             </button>
-          )}
 
-          {/* Ligne 2 : Grille à 2 colonnes */}
-          <div className="dash-columns">
-            {/* COLONNE GAUCHE */}
-            <div className="dash-col-main">
-              {/* Carte Évolution des ventes */}
-              <div className="card">
-                <div className="row">
-                  <h2>Évolution des ventes</h2>
-                  <div className="seg">
-                    <button aria-pressed={period === 7} onClick={() => setPeriod(7)}>7 j</button>
-                    <button aria-pressed={period === 30} onClick={() => setPeriod(30)}>30 j</button>
-                  </div>
-                </div>
-                <div style={{ color: 'var(--mute)', fontSize: 13, marginTop: 4 }}>
-                  Chiffre d'affaires cumulé : <b>{hideAmounts ? '••••••' : `${fmt(totalDashboardToday)} FCFA`}</b>
-                </div>
+            <button
+              onClick={() => {
+                setModalRestockQty('');
+                setShowRestockModal(true);
+              }}
+              title="Entrée en stock (saisir au clavier sans limitation)"
+            >
+              <span><ArrowDown size={22} strokeWidth={2.4} /></span>
+              Entrée
+            </button>
 
-                <div className="chart-container">
-                  <svg className="chart" viewBox={`0 0 ${chartPoints.W} ${chartPoints.H}`}>
-                    <defs>
-                      <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.38" />
-                        <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
-                      </linearGradient>
-                    </defs>
-                    <path
-                      d={`${chartPoints.path} L${chartPoints.W - 10} ${chartPoints.H} L10 ${chartPoints.H} Z`}
-                      fill="url(#chartGrad)"
-                    />
-                    <path
-                      d={chartPoints.path}
-                      fill="none"
-                      stroke="#059669"
-                      strokeWidth="3.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <circle
-                      cx={chartPoints.last[0]}
-                      cy={chartPoints.last[1]}
-                      r="5.5"
-                      fill="#ffd60a"
-                      stroke="#047857"
-                      strokeWidth="2.5"
-                    />
-                  </svg>
-                  {period === 7 && (
-                    <div className="chart-labels">
-                      {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map((d, i) => (
-                        <span key={i}>{d}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
+            <button onClick={() => setShowScannerModal(true)} title="Scanner code-barres">
+              <span><ScanBarcode size={22} strokeWidth={2.4} /></span>
+              Scanner
+            </button>
+
+            <button onClick={() => setCurrentTab('stock')} title="Inventaire">
+              <span><ClipboardList size={22} strokeWidth={2.4} /></span>
+              Inventaire
+            </button>
+          </div>
+
+          {/* Carte Évolution des ventes */}
+          <div className="card">
+            <div className="row">
+              <h2>Évolution des ventes</h2>
+              <div className="seg" role="group" aria-label="Période">
+                <button aria-pressed={period === 7} onClick={() => setPeriod(7)}>7 j</button>
+                <button aria-pressed={period === 30} onClick={() => setPeriod(30)}>30 j</button>
               </div>
+            </div>
+            <div style={{ color: 'var(--mute)', fontSize: 13, marginTop: 4 }}>
+              Total sur {period} jours : <b>{hideAmounts ? '••••••' : `${fmt(period === 7 ? 924500 : 3850000)} FCFA`}</b>
+            </div>
 
-              {/* Dernières ventes avec bouton direct de téléchargement PDF */}
-              <div className="card">
-                <div className="row">
-                  <h2>Dernières ventes récentes ({newSales.length})</h2>
-                  <button onClick={() => setCurrentTab('reports')} style={{ color: 'var(--blue)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span>Historique</span>
-                    <ChevronRight size={14} />
-                  </button>
-                </div>
-                {newSales.length === 0 ? (
-                  <p style={{ color: 'var(--mute)', margin: '14px 0', fontSize: 13 }}>
-                    Chiffre d'affaires initial de départ : <b>{fmt(initialBaseAmount)} FCFA</b>.<br />
-                    Toutes vos nouvelles ventes s'ajouteront ici et s'additionneront en temps réel au dashboard !
-                  </p>
-                ) : (
-                  <ul className="list">
-                    {newSales.slice(0, 6).map((s, idx) => (
-                      <li key={idx}>
-                        <span className="av"><Receipt size={18} /></span>
-                        <div className="grow">
-                          <b>{s.cl}</b>
-                          <span>{s.no} · {s.t} · {s.pay}</span>
-                        </div>
-                        <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span className="amt">{hideAmounts ? '••••' : `${fmt(s.tot)} FCFA`}</span>
-                          <button
-                            className="btn-icon-receipt"
-                            onClick={() => downloadReceipt(s, showToast)}
-                            title={`Télécharger le reçu ${s.no}`}
-                            aria-label={`Télécharger le reçu ${s.no}`}
-                          >
-                            <Download size={15} />
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+            <div className="chart-container" style={{ marginTop: 8 }}>
+              <svg className="chart" viewBox="0 0 320 160">
+                <defs>
+                  <linearGradient id="chartGradV2" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#0bb35f" stopOpacity="0.35" />
+                    <stop offset="100%" stopColor="#0bb35f" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                {/* Lignes repères avec labels */}
+                <line x1="40" x2="306" y1="20" y2="20" stroke="var(--line)" strokeDasharray="3 4" />
+                <text x="34" y="24" fontSize="10" fill="var(--mute)" textAnchor="end">{hideAmounts ? '' : '250 k'}</text>
+                <line x1="40" x2="306" y1="60" y2="60" stroke="var(--line)" strokeDasharray="3 4" />
+                <text x="34" y="64" fontSize="10" fill="var(--mute)" textAnchor="end">{hideAmounts ? '' : '150 k'}</text>
+                <line x1="40" x2="306" y1="100" y2="100" stroke="var(--line)" strokeDasharray="3 4" />
+                <text x="34" y="104" fontSize="10" fill="var(--mute)" textAnchor="end">{hideAmounts ? '' : '50 k'}</text>
+
+                {/* Courbe remplie et trait */}
+                <path
+                  d="M40 110 L84 94 L128 116 L172 72 L216 78 L260 58 L304 40 L304 136 L40 136 Z"
+                  fill="url(#chartGradV2)"
+                />
+                <path
+                  d="M40 110 L84 94 L128 116 L172 72 L216 78 L260 58 L304 40"
+                  fill="none"
+                  stroke="#0bb35f"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                {/* Point final jaune/vert */}
+                <circle cx="304" cy="40" r="5" fill="#4ddc17" stroke="#054a29" strokeWidth="2.5" />
+                {!hideAmounts && (
+                  <text x="304" y="28" fontSize="11" fontWeight="700" fill="var(--ink)" textAnchor="end">
+                    {fmt(totalDashboardToday)}
+                  </text>
                 )}
+
+                {/* Labels des jours */}
+                <text x="40" y="152" fontSize="10" fill="var(--mute)" textAnchor="start">Lun</text>
+                <text x="84" y="152" fontSize="10" fill="var(--mute)" textAnchor="middle">Mar</text>
+                <text x="128" y="152" fontSize="10" fill="var(--mute)" textAnchor="middle">Mer</text>
+                <text x="172" y="152" fontSize="10" fill="var(--mute)" textAnchor="middle">Jeu</text>
+                <text x="216" y="152" fontSize="10" fill="var(--mute)" textAnchor="middle">Ven</text>
+                <text x="260" y="152" fontSize="10" fill="var(--mute)" textAnchor="middle">Sam</text>
+                <text x="304" y="152" fontSize="10" fill="var(--mute)" textAnchor="end">Dim</text>
+              </svg>
+            </div>
+          </div>
+
+          {/* Alerte Produits sous le seuil */}
+          <button
+            className="alert"
+            onClick={() => setCurrentTab('stock')}
+            style={{
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: 14,
+              borderRadius: 16,
+              background: 'var(--warnbg)',
+              color: 'var(--warn)',
+              border: '1px solid rgba(180, 83, 9, 0.25)',
+              textAlign: 'left',
+              width: '100%',
+              margin: '12px 0'
+            }}
+          >
+            <span style={{ fontSize: 24, flexShrink: 0 }}>⚠️</span>
+            <span className="grow">
+              <b style={{ display: 'block', fontSize: 14 }}>3 produits sous le seuil</b>
+              <span style={{ fontWeight: 400, fontSize: 12, opacity: 0.9 }}>
+                Sucre 1 kg, Huile végétale 1 L, Riz parfumé 5 kg · touchez pour réapprovisionner
+              </span>
+            </span>
+            <span style={{ fontSize: 18, opacity: 0.8 }}>›</span>
+          </button>
+
+          {/* Modes de paiement du jour (Design avec barres individuelles détaillées) */}
+          <div className="card">
+            <div className="row">
+              <h2>Modes de paiement du jour</h2>
+            </div>
+            <div style={{ marginTop: 10 }}>
+              {/* Espèces */}
+              <div style={{ padding: '8px 0' }}>
+                <div className="row" style={{ marginBottom: 6 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                    <i className="sw" style={{ background: '#054a29', width: 9, height: 9, borderRadius: '50%' }}></i>
+                    Espèces
+                  </span>
+                  <span>
+                    <b style={{ fontWeight: 800 }}>{hideAmounts ? '••••••' : '95 940'}</b>{' '}
+                    <small style={{ color: 'var(--mute)' }}>FCFA</small>{' '}
+                    <span style={{ color: 'var(--mute)', fontSize: 12, marginLeft: 6, fontWeight: 600 }}>52 %</span>
+                  </span>
+                </div>
+                <div style={{ height: 8, borderRadius: 99, background: 'var(--bg)', overflow: 'hidden' }}>
+                  <div style={{ width: '52%', height: '100%', background: '#047857', borderRadius: 99 }}></div>
+                </div>
+              </div>
+
+              {/* Mobile Money */}
+              <div style={{ padding: '8px 0', borderTop: '1px solid var(--line)' }}>
+                <div className="row" style={{ marginBottom: 6 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                    <i className="sw" style={{ background: '#4ddc17', width: 9, height: 9, borderRadius: '50%' }}></i>
+                    Mobile Money
+                  </span>
+                  <span>
+                    <b style={{ fontWeight: 800 }}>{hideAmounts ? '••••••' : '88 560'}</b>{' '}
+                    <small style={{ color: 'var(--mute)' }}>FCFA</small>{' '}
+                    <span style={{ color: 'var(--mute)', fontSize: 12, marginLeft: 6, fontWeight: 600 }}>48 %</span>
+                  </span>
+                </div>
+                <div style={{ height: 8, borderRadius: 99, background: 'var(--bg)', overflow: 'hidden' }}>
+                  <div style={{ width: '48%', height: '100%', background: '#4ddc17', borderRadius: 99 }}></div>
+                </div>
               </div>
             </div>
+          </div>
 
-            {/* COLONNE DROITE */}
-            <div className="dash-col-side">
-              {/* Modes de paiement */}
-              <div className="card">
-                <div className="row">
-                  <h2>Modes de paiement du jour</h2>
-                </div>
-                <div className="bar" style={{ height: 12, margin: '14px 0 10px' }}>
-                  <i style={{ width: `${totalDashboardToday ? (paymentBreakdown['Espèces'] / totalDashboardToday) * 100 : 50}%`, background: 'var(--blue)' }}></i>
-                  <i style={{ width: `${totalDashboardToday ? (paymentBreakdown['Flooz'] / totalDashboardToday) * 100 : 30}%`, background: 'var(--yellow)' }}></i>
-                  <i style={{ width: `${totalDashboardToday ? (paymentBreakdown['T-Money'] / totalDashboardToday) * 100 : 20}%`, background: '#f97316' }}></i>
-                </div>
-                <div className="payment-list">
-                  <div className="payment-row">
-                    <span><i className="sw" style={{ background: 'var(--blue)' }}></i>Espèces</span>
-                    <b>{fmt(paymentBreakdown['Espèces'])} FCFA</b>
-                  </div>
-                  <div className="payment-row">
-                    <span><i className="sw" style={{ background: 'var(--yellow)' }}></i>Flooz</span>
-                    <b>{fmt(paymentBreakdown['Flooz'])} FCFA</b>
-                  </div>
-                  <div className="payment-row">
-                    <span><i className="sw" style={{ background: '#f97316' }}></i>T-Money</span>
-                    <b>{fmt(paymentBreakdown['T-Money'])} FCFA</b>
-                  </div>
-                </div>
-              </div>
-
-              {/* Top produits */}
-              <div className="card">
-                <h2>Produits les plus demandés</h2>
-                <ul className="list">
-                  {products.slice(0, 4).map((p) => (
-                    <li key={p.id}>
-                      <span className="av">{p.n[0]}</span>
-                      <div className="grow">
-                        <b>{p.n}</b>
-                        <span>{fmt(p.p)} FCFA · Stock: {p.s}</span>
-                      </div>
-                      <span className={`tag ${p.s <= p.min ? 'bad' : 'ok'}`}>
-                        {p.s <= p.min ? 'Stock bas' : 'OK'}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+          {/* Produits les plus vendus */}
+          <div className="card">
+            <div className="row">
+              <h2>Produits les plus vendus</h2>
+              <button
+                onClick={() => setCurrentTab('stock')}
+                style={{
+                  color: '#34d399',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Voir tout
+              </button>
             </div>
+            <ul className="list">
+              <li>
+                <span className="av">S</span>
+                <div className="grow">
+                  <b>Sucre 1 kg</b>
+                  <span>42 vendus · reste 8</span>
+                </div>
+                <span className="tag bad" style={{ background: '#e11010', color: '#fff', padding: '3px 9px', borderRadius: 99, fontWeight: 700 }}>
+                  Stock bas
+                </span>
+              </li>
+              <li>
+                <span className="av">H</span>
+                <div className="grow">
+                  <b>Huile végétale 1 L</b>
+                  <span>31 vendus · reste 5</span>
+                </div>
+                <span className="tag bad" style={{ background: '#e11010', color: '#fff', padding: '3px 9px', borderRadius: 99, fontWeight: 700 }}>
+                  Stock bas
+                </span>
+              </li>
+              <li>
+                <span className="av">E</span>
+                <div className="grow">
+                  <b>Eau minérale 1,5 L</b>
+                  <span>27 vendus · reste 140</span>
+                </div>
+                <span className="tag ok" style={{ background: '#4ddc17', color: '#0a2e12', padding: '3px 9px', borderRadius: 99, fontWeight: 700 }}>
+                  OK
+                </span>
+              </li>
+            </ul>
           </div>
         </main>
       )}
@@ -1142,9 +1316,21 @@ export default function App() {
                 <span style={{ fontSize: 13, color: 'var(--mute)' }}>{products.length} articles en gestion</span>
               </div>
               {currentPermissions.canEditStock && (
-                <button className="qb" onClick={() => setShowNewProd(!showNewProd)}>
-                  {showNewProd ? 'Fermer' : '+ Nouveau produit'}
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    className="qb"
+                    style={{ borderColor: 'var(--pri)', color: 'var(--pri)', fontWeight: 600 }}
+                    onClick={() => {
+                      setModalRestockQty('');
+                      setShowRestockModal(true);
+                    }}
+                  >
+                    + Entrée de stock
+                  </button>
+                  <button className="qb" onClick={() => setShowNewProd(!showNewProd)}>
+                    {showNewProd ? 'Fermer' : '+ Nouveau produit'}
+                  </button>
+                </div>
               )}
             </div>
 
@@ -1228,16 +1414,29 @@ export default function App() {
                       </div>
 
                       {currentPermissions.canEditStock && (
-                        <button
-                          className="qb"
-                          style={{ width: '100%', padding: '9px 0', textAlign: 'center' }}
-                          onClick={() => {
-                            setProducts((prev) => prev.map((x) => x.id === p.id ? { ...x, s: x.s + 10 } : x));
-                            showToast(`+10 ${p.n} reçus en stock ✓`);
-                          }}
-                        >
-                          + Réceptionner 10 unités
-                        </button>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                          <input
+                            type="number"
+                            min="1"
+                            className="fld"
+                            style={{ width: '85px', padding: '8px 6px', textAlign: 'center', fontSize: 13 }}
+                            placeholder="Qté"
+                            value={restockQtyInputs[p.id] !== undefined ? restockQtyInputs[p.id] : ''}
+                            onChange={(e) => setRestockQtyInputs({ ...restockQtyInputs, [p.id]: e.target.value })}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleReceiveStock(p.id, restockQtyInputs[p.id]);
+                              }
+                            }}
+                          />
+                          <button
+                            className="qb"
+                            style={{ flex: 1, padding: '8px 10px', fontSize: 13, fontWeight: 700 }}
+                            onClick={() => handleReceiveStock(p.id, restockQtyInputs[p.id])}
+                          >
+                            + Réceptionner
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1554,10 +1753,19 @@ export default function App() {
               className="cta"
               onClick={() => {
                 const now = new Date();
-                setClosedDays((prev) => [
-                  { date: now.toLocaleDateString('fr-FR'), tot: totalDashboardToday, n: totalSalesCountToday, by: ROLES[role].label },
-                  ...prev
-                ]);
+                const closureObj = {
+                  date: now.toLocaleDateString('fr-FR'),
+                  tot: totalDashboardToday,
+                  n: totalSalesCountToday,
+                  by: ROLES[role].label
+                };
+                setClosedDays((prev) => [closureObj, ...prev]);
+                supabase.from('cash_closures').insert({
+                  date: closureObj.date,
+                  tot: closureObj.tot,
+                  n: closureObj.n,
+                  closed_by: closureObj.by
+                }).then();
                 setInitialBaseAmount(0);
                 setInitialBaseCount(0);
                 setNewSales([]);
@@ -1649,50 +1857,90 @@ export default function App() {
         </div>
       )}
 
-      {/* NAVIGATION PRINCIPALE (Le Stock & Rapports sont masqués pour le Caissier) */}
+      {/* NAVIGATION PRINCIPALE (BOTTOM BAR SUR MOBILE & SIDEBAR ELEGANTE SUR DESKTOP) */}
       <nav aria-label="Navigation principale">
+        {/* LOGO DE MARQUE (EN TÊTE DE LA SIDEBAR SUR DESKTOP) */}
+        <div className="nav-brand" onClick={() => setCurrentTab('accueil')} title="StockPilot - Retour à l'accueil">
+          <div className="nav-brand-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 8 12 3 3 8v8l9 5 9-5z"/>
+              <path d="m3 8 9 5 9-5M12 13v8"/>
+            </svg>
+          </div>
+          <div className="nav-brand-text">
+            <span className="nav-brand-title">StockPilot</span>
+            <span className="nav-brand-sub">SaaS v2.1</span>
+          </div>
+        </div>
+
         <button
+          className="nav-btn-accueil"
           aria-current={currentTab === 'accueil' ? 'page' : undefined}
           onClick={() => setCurrentTab('accueil')}
+          title="Accueil"
         >
-          <LayoutDashboard size={20} />
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 10.5 12 3l9 7.5"/>
+            <path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/>
+          </svg>
           <span>Accueil</span>
         </button>
 
-        {currentPermissions.canViewStock && (
-          <button
-            aria-current={currentTab === 'stock' ? 'page' : undefined}
-            onClick={() => setCurrentTab('stock')}
-          >
-            <Package size={20} />
-            <span>Stock</span>
-          </button>
-        )}
+        <button
+          className="nav-btn-stock"
+          aria-current={currentTab === 'stock' ? 'page' : undefined}
+          onClick={() => setCurrentTab('stock')}
+          title="Gestion du Stock"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 8 12 3 3 8v8l9 5 9-5z"/>
+            <path d="m3 8 9 5 9-5M12 13v8"/>
+          </svg>
+          <span>Stock</span>
+        </button>
 
         <button
-          className="sell"
+          className="sell nav-btn-sell"
           aria-current={currentTab === 'vente' ? 'page' : undefined}
           onClick={() => setCurrentTab('vente')}
+          aria-label="Nouvelle vente"
+          title="Nouvelle vente / Caisse"
         >
-          <em><ShoppingCart size={22} /></em>
+          <em>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="9" cy="20" r="1.4"/>
+              <circle cx="18" cy="20" r="1.4"/>
+              <path d="M2 3h3l2.7 12.4a1 1 0 0 0 1 .8h9.2a1 1 0 0 0 1-.8L21 7H6"/>
+            </svg>
+          </em>
           <span>Vente</span>
         </button>
 
-        {currentPermissions.canViewReports && (
-          <button
-            aria-current={currentTab === 'reports' ? 'page' : undefined}
-            onClick={() => setCurrentTab('reports')}
-          >
-            <BarChart3 size={20} />
-            <span>Rapports</span>
-          </button>
-        )}
+        <button
+          className="nav-btn-reports"
+          aria-current={currentTab === 'reports' ? 'page' : undefined}
+          onClick={() => setCurrentTab('reports')}
+          title="Rapports financiers et statistiques"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 3v18h18"/>
+            <path d="M18 17V9M13 17V5M8 17v-3"/>
+          </svg>
+          <span>Rapports</span>
+        </button>
 
         <button
+          className="nav-btn-plus"
           aria-current={currentTab === 'plus' ? 'page' : undefined}
           onClick={() => setCurrentTab('plus')}
+          title="Plus d'options et paramètres"
         >
-          <Settings size={20} />
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+          </svg>
           <span>Plus</span>
         </button>
       </nav>
@@ -2023,6 +2271,302 @@ export default function App() {
                 onClick={handleChangePin}
               >
                 Enregistrer le PIN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL MULTI-BOUTIQUES ET MAGASINS */}
+      {showShopModal && (
+        <div className="ov" onClick={() => setShowShopModal(false)}>
+          <div className="card modal-content-wrap" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span className="av" style={{ background: 'rgba(77, 220, 23, 0.15)', color: '#4ddc17' }}>
+                  <Store size={22} />
+                </span>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 18 }}>Entreprise & Magasins</h2>
+                  <span style={{ fontSize: 12, color: 'var(--mute)' }}>Changez de magasin ou ajoutez-en un</span>
+                </div>
+              </div>
+              <button
+                className="qb"
+                style={{ width: 32, height: 32, padding: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onClick={() => setShowShopModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* LISTE DES BOUTIQUES & MAGASINS */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, margin: '14px 0', maxHeight: '55vh', overflowY: 'auto' }}>
+              {shops.map((s, idx) => (
+                <div key={idx} style={{ background: 'var(--bg)', borderRadius: 12, padding: 12, border: '1px solid var(--border)' }}>
+                  <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Briefcase size={14} />
+                    <span>{s.co}</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {s.st.map((store, sIdx) => {
+                      const isActive = currentShop.co === s.co && currentShop.st === store;
+                      return (
+                        <button
+                          key={sIdx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 12px',
+                            borderRadius: 8,
+                            border: isActive ? '1.5px solid #4ddc17' : '1px solid var(--border)',
+                            background: isActive ? 'rgba(77, 220, 23, 0.12)' : 'var(--card-bg, #fff)',
+                            color: 'var(--text)',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            fontWeight: isActive ? 700 : 500,
+                            transition: 'all 0.15s ease'
+                          }}
+                          onClick={() => handleSelectShop(s.co, store)}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <Store size={16} color={isActive ? '#4ddc17' : 'var(--mute)'} />
+                            <span>{store}</span>
+                          </div>
+                          {isActive ? (
+                            <span style={{ fontSize: 11, background: '#4ddc17', color: '#052e0a', padding: '2px 8px', borderRadius: 12, fontWeight: 800 }}>
+                              Actif
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11, color: 'var(--mute)' }}>Choisir</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* FORMULAIRE D'AJOUT D'UN NOUVEAU POINT DE VENTE */}
+            {!showAddShopForm ? (
+              <button
+                className="qb"
+                style={{ width: '100%', padding: 12, fontWeight: 700, borderColor: '#4ddc17', color: 'var(--text)' }}
+                onClick={() => setShowAddShopForm(true)}
+              >
+                + Ajouter une boutique ou un magasin
+              </button>
+            ) : (
+              <form onSubmit={handleAddShop} style={{ background: 'var(--bg)', padding: 12, borderRadius: 12, border: '1px dashed #4ddc17', marginTop: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: 'var(--text)' }}>
+                  Nouveau point de vente
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--mute)', display: 'block', marginBottom: 3 }}>
+                      Entreprise / Enseigne parente
+                    </label>
+                    <select
+                      className="fld"
+                      value={newShopCompany}
+                      onChange={(e) => setNewShopCompany(e.target.value)}
+                    >
+                      {shops.map((s, i) => (
+                        <option key={i} value={s.co}>{s.co}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 6 }}>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--mute)', display: 'block', marginBottom: 3 }}>
+                        Type
+                      </label>
+                      <select
+                        className="fld"
+                        value={newShopType}
+                        onChange={(e) => setNewShopType(e.target.value)}
+                      >
+                        <option value="Magasin">Magasin</option>
+                        <option value="Boutique">Boutique</option>
+                        <option value="Dépôt">Dépôt</option>
+                        <option value="Rayon">Rayon</option>
+                        <option value="Point de vente">Point</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--mute)', display: 'block', marginBottom: 3 }}>
+                        Nom (ex: Rayon Express, Dépôt Nord)
+                      </label>
+                      <input
+                        className="fld"
+                        placeholder="Ex: Rayon Express..."
+                        value={newShopName}
+                        onChange={(e) => setNewShopName(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                    <button
+                      type="button"
+                      className="qb"
+                      style={{ flex: 1, padding: 8 }}
+                      onClick={() => setShowAddShopForm(false)}
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      type="submit"
+                      className="cta"
+                      style={{ flex: 1.5, padding: 8 }}
+                    >
+                      Enregistrer
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
+
+            <div style={{ marginTop: 14 }}>
+              <button
+                className="qb"
+                style={{ width: '100%', padding: 10 }}
+                onClick={() => setShowShopModal(false)}
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ENTRÉE DE STOCK / RÉCEPTION (SAISIE LIBRE AU CLAVIER SANS LIMITE DE 10) */}
+      {showRestockModal && (
+        <div className="ov" onClick={() => setShowRestockModal(false)}>
+          <div className="card modal-content-wrap" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span className="av" style={{ background: 'rgba(77, 220, 23, 0.15)', color: '#4ddc17' }}>
+                  <PackagePlus size={22} />
+                </span>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 18 }}>Entrée en stock</h2>
+                  <span style={{ fontSize: 12, color: 'var(--mute)' }}>Réception libre de marchandise</span>
+                </div>
+              </div>
+              <button
+                className="qb"
+                style={{ width: 32, height: 32, padding: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onClick={() => setShowRestockModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, margin: '14px 0' }}>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--mute)', display: 'block', marginBottom: 4 }}>
+                  Sélectionner l'article
+                </label>
+                <select
+                  className="fld"
+                  value={modalRestockProduct}
+                  onChange={(e) => setModalRestockProduct(Number(e.target.value))}
+                >
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.n} (Stock actuel : {p.s} unités)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {(() => {
+                const selectedProd = products.find((p) => p.id === modalRestockProduct) || products[0];
+                const inputNum = parseInt(modalRestockQty, 10) || 0;
+                const projectedStock = selectedProd ? selectedProd.s + inputNum : 0;
+                return (
+                  <>
+                    <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: 12, color: 'var(--mute)' }}>Stock actuel</div>
+                        <div style={{ fontSize: 18, fontWeight: 800 }}>{selectedProd?.s || 0} unités</div>
+                      </div>
+                      <div style={{ fontSize: 20, color: 'var(--mute)' }}>➔</div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 12, color: '#4ddc17', fontWeight: 600 }}>Nouveau stock estimé</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#4ddc17' }}>
+                          {projectedStock} unités
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
+                        Quantité reçue (saisie libre au clavier)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        autoFocus
+                        className="fld"
+                        style={{ fontSize: 18, fontWeight: 700, padding: 12, textAlign: 'center' }}
+                        placeholder="Ex: 25, 50, 100..."
+                        value={modalRestockQty}
+                        onChange={(e) => setModalRestockQty(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleReceiveStock(selectedProd.id, modalRestockQty);
+                            setShowRestockModal(false);
+                          }
+                        }}
+                      />
+                    </div>
+
+                    {/* BOUTONS RAPIDES D'AJOUT POUR LE CONFORT */}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {[5, 10, 20, 50, 100].map((step) => (
+                        <button
+                          key={step}
+                          type="button"
+                          className="qb"
+                          style={{ flex: 1, padding: '6px 0', fontSize: 12, fontWeight: 700 }}
+                          onClick={() => {
+                            const currentVal = parseInt(modalRestockQty, 10) || 0;
+                            setModalRestockQty(String(currentVal + step));
+                          }}
+                        >
+                          +{step}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <button
+                className="qb"
+                style={{ flex: 1, padding: 12 }}
+                onClick={() => setShowRestockModal(false)}
+              >
+                Annuler
+              </button>
+              <button
+                className="cta"
+                style={{ flex: 1.5, padding: 12 }}
+                onClick={() => {
+                  handleReceiveStock(modalRestockProduct, modalRestockQty);
+                  setShowRestockModal(false);
+                }}
+              >
+                Enregistrer la réception
               </button>
             </div>
           </div>
